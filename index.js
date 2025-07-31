@@ -1,5 +1,5 @@
-// Corrige erro do Baileys no Render
-global.crypto = require("crypto");
+const crypto = require("node:crypto");
+global.crypto = crypto;
 
 const express = require('express');
 const qrcode = require('qrcode-terminal');
