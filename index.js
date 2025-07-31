@@ -39,11 +39,9 @@ async function gerarOuCarregarEmbeddings() {
 
   console.log('🔄 Gerando embeddings do PDF e das fontes externas...');
   
-  // Carrega PDF
   const dataBuffer = fs.readFileSync('./regimento.pdf');
   const pdfData = await pdfParse(dataBuffer);
 
-  // Carrega fontes externas
   const fontesExtras = fs.readFileSync('./fontes.txt', 'utf8');
 
   const splitter = new RecursiveCharacterTextSplitter({
@@ -51,9 +49,7 @@ async function gerarOuCarregarEmbeddings() {
     chunkOverlap: 50
   });
 
-  // Divide o regimento
   const pdfDividido = await splitter.splitText(pdfData.text);
-  // Divide as fontes extras
   const fontesDivididas = await splitter.splitText(fontesExtras);
 
   pdfChunks = [...pdfDividido, ...fontesDivididas];
@@ -98,9 +94,9 @@ function gerarSaudacao(nome) {
   const opcoes = [
     `Olá, ${nome}! 👋`,
     `Oi, ${nome}! Tudo bem? 🙂`,
-    `Seja bem-vindo(a), ${nome}! 🌟`,
-    `Oi oi, ${nome}! Como posso te ajudar hoje? 🤗`,
-    `Prazer falar com você, ${nome}! 🙌`
+    `Seja muito bem-vindo(a), ${nome}! 🌟`,
+    `Oi oi, ${nome}! É um prazer falar com você! 🤗`,
+    `Que bom ter você aqui, ${nome}! 🙌`
   ];
   return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
@@ -149,10 +145,10 @@ async function startBot() {
             {
               role: "system",
               content: `Você é o assistente virtual do Centro de Inovação do Polo Tecnológico do Jaraguá (CIPT).
-Responda APENAS com base nos trechos abaixo do Regimento Interno e nas informações complementares.
-Use SEMPRE o tempo verbal PRESENTE, de forma simpática e clara.
+Responda sempre de forma simpática, acolhedora e clara, no tempo presente.
+Baseie-se APENAS nos trechos abaixo do Regimento Interno e nas informações complementares.
 
-Se a resposta não estiver nos documentos, responda:
+Se a resposta não estiver nos documentos, diga:
 "Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444."
 
 Trechos disponíveis:
@@ -160,7 +156,7 @@ ${trechos}`
             },
             { role: "user", content: pergunta }
           ],
-          temperature: 0.2,
+          temperature: 0.4,
           max_tokens: 400
         });
 
@@ -205,15 +201,13 @@ startBot();
 app.listen(3000, () => {
   console.log('🌐 Servidor rodando na porta 3000');
 
-  // Keep-alive interno
   setInterval(() => {
     fetch("https://cipt-whatsapp-bot.onrender.com/")
       .then(() => console.log("🔄 Mantendo serviço ativo..."))
       .catch(err => console.error("⚠️ Erro no keep-alive:", err.message));
-  }, 4 * 60 * 1000); // a cada 4 minutos
+  }, 4 * 60 * 1000);
 });
 
-// Endpoint simples para teste
 app.get('/', (req, res) => {
   res.send('✅ Bot do CIPT está online!');
 });
