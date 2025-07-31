@@ -9,7 +9,7 @@ const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
-const fetch = require('node-fetch'); // para o keep-alive
+const fetch = require('node-fetch'); // keep-alive
 
 dotenv.config();
 
@@ -37,15 +37,26 @@ async function gerarOuCarregarEmbeddings() {
     return;
   }
 
-  console.log('🔄 Gerando embeddings do PDF...');
+  console.log('🔄 Gerando embeddings do PDF e das fontes externas...');
+  
+  // Carrega PDF
   const dataBuffer = fs.readFileSync('./regimento.pdf');
   const pdfData = await pdfParse(dataBuffer);
+
+  // Carrega fontes externas
+  const fontesExtras = fs.readFileSync('./fontes.txt', 'utf8');
 
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 500,
     chunkOverlap: 50
   });
-  pdfChunks = await splitter.splitText(pdfData.text);
+
+  // Divide o regimento
+  const pdfDividido = await splitter.splitText(pdfData.text);
+  // Divide as fontes extras
+  const fontesDivididas = await splitter.splitText(fontesExtras);
+
+  pdfChunks = [...pdfDividido, ...fontesDivididas];
 
   for (let chunk of pdfChunks) {
     const embedding = await client.embeddings.create({
@@ -59,7 +70,7 @@ async function gerarOuCarregarEmbeddings() {
   }
 
   fs.writeFileSync('./embeddings.json', JSON.stringify(embeddingsCache, null, 2));
-  console.log(`✅ Embeddings gerados e salvos (${embeddingsCache.length} trechos)`);
+  console.log(`✅ Embeddings combinados gerados (${embeddingsCache.length} trechos)`);
 }
 
 // Buscar trechos relevantes
@@ -137,13 +148,14 @@ async function startBot() {
           messages: [
             {
               role: "system",
-              content: `Você é o assistente virtual do CIPT. 
-Responda APENAS com base nos trechos abaixo do Regimento Interno. 
-Use SEMPRE o tempo verbal PRESENTE. 
-Se não houver resposta clara, diga:
+              content: `Você é o assistente virtual do Centro de Inovação do Polo Tecnológico do Jaraguá (CIPT).
+Responda APENAS com base nos trechos abaixo do Regimento Interno e nas informações complementares.
+Use SEMPRE o tempo verbal PRESENTE, de forma simpática e clara.
+
+Se a resposta não estiver nos documentos, responda:
 "Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444."
 
-Trechos:
+Trechos disponíveis:
 ${trechos}`
             },
             { role: "user", content: pergunta }
