@@ -1,30 +1,44 @@
 const express = require('express');
 const axios = require('axios');
-const venom = require('venom-bot');
+const { makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode-terminal');
 
 const app = express();
 app.use(express.json());
 
-let clientInstance;
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState('auth');
 
-venom.create({
-  session: 'cipt-session',
-  multidevice: true, // compatível com versões mais novas do WhatsApp
-})
-.then((client) => {
-  clientInstance = client;
-  console.log('✅ Venom conectado ao WhatsApp');
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: true
+  });
 
-  client.onMessage(async (message) => {
-    if (!message.isGroupMsg) {
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    if (qr) {
+      console.log('⚡ Escaneie este QR Code:');
+      qrcode.generate(qr, { small: true });
+    }
+    if (connection === 'open') {
+      console.log('✅ Conectado ao WhatsApp!');
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.key.fromMe && msg.message?.conversation) {
+      const text = msg.message.conversation;
+      console.log('📩 Mensagem recebida:', text);
+
       try {
-        console.log('📩 Mensagem recebida:', message.body);
-
         const bpRes = await axios.post(
           'https://api.botpress.cloud/v1/messages',
           {
-            conversationId: message.from,
-            payload: { type: 'text', text: message.body }
+            conversationId: msg.key.remoteJid,
+            payload: { type: 'text', text }
           },
           {
             headers: {
@@ -38,20 +52,22 @@ venom.create({
           bpRes.data?.payload?.text ||
           'Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444.';
 
-        console.log('🤖 Resposta do Botpress:', resposta);
-        await client.sendText(message.from, resposta);
+        await sock.sendMessage(msg.key.remoteJid, { text: resposta });
+        console.log('🤖 Resposta enviada:', resposta);
       } catch (err) {
         console.error('❌ Erro ao responder:', err.message);
-        await client.sendText(message.from,
-          'Houve um problema ao processar sua mensagem. Tente mais tarde.');
+        await sock.sendMessage(msg.key.remoteJid, {
+          text: 'Houve um problema ao processar sua mensagem. Tente novamente mais tarde.'
+        });
       }
     }
   });
-})
-.catch((error) => console.error('❌ Erro ao iniciar cliente:', error));
+}
+
+startBot();
 
 app.get('/', (req, res) =>
-  res.send('🚀 Chatbot CIPT rodando com Venom-Bot')
+  res.send('🚀 Chatbot CIPT rodando com Baileys (sem Puppeteer)')
 );
 
 app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
