@@ -9,6 +9,7 @@ const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
+const fetch = require('node-fetch'); // para o keep-alive
 
 dotenv.config();
 
@@ -140,7 +141,7 @@ async function startBot() {
 Responda APENAS com base nos trechos abaixo do Regimento Interno. 
 Use SEMPRE o tempo verbal PRESENTE. 
 Se não houver resposta clara, diga:
-"Desculpe, não encontrei informações no regimento. Contate supcti@secti.al.gov.br."
+"Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444."
 
 Trechos:
 ${trechos}`
@@ -189,4 +190,18 @@ ${trechos}`
 }
 
 startBot();
-app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
+app.listen(3000, () => {
+  console.log('🌐 Servidor rodando na porta 3000');
+
+  // Keep-alive interno
+  setInterval(() => {
+    fetch("https://cipt-whatsapp-bot.onrender.com/")
+      .then(() => console.log("🔄 Mantendo serviço ativo..."))
+      .catch(err => console.error("⚠️ Erro no keep-alive:", err.message));
+  }, 4 * 60 * 1000); // a cada 4 minutos
+});
+
+// Endpoint simples para teste
+app.get('/', (req, res) => {
+  res.send('✅ Bot do CIPT está online!');
+});
