@@ -7,23 +7,26 @@ app.use(express.json());
 
 let clientInstance;
 
-// Inicializa o cliente do WPPConnect
 wppconnect.create({
-  session: 'cipt-session', // nome da sessão
-  puppeteerOptions: { args: ['--no-sandbox'] } // importante para Render
+  session: 'cipt-session',
+  headless: true,
+  useChrome: false,
+  browserArgs: ['--no-sandbox', '--disable-setuid-sandbox'],
+  puppeteerOptions: {
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  },
+  tokenStore: 'file', // Salva tokens em arquivos
 })
   .then((client) => {
     clientInstance = client;
+    console.log('✅ WPPConnect conectado (modo headless)');
 
-    console.log("✅ WPPConnect conectado e rodando...");
-
-    // Escuta mensagens recebidas
     client.onMessage(async (message) => {
       if (!message.isGroupMsg) {
         try {
-          console.log("📩 Mensagem recebida:", message.body);
+          console.log('📩 Mensagem recebida:', message.body);
 
-          // Enviar mensagem para o Botpress
+          // Envia a mensagem para o Botpress
           const bpRes = await axios.post(
             'https://api.botpress.cloud/v1/messages',
             {
@@ -38,21 +41,27 @@ wppconnect.create({
             }
           );
 
-          // Extrai resposta do Botpress
-          const resposta = bpRes.data.payload?.text || "Desculpe, não consegui entender sua solicitação.";
-          console.log("🤖 Resposta do Botpress:", resposta);
+          // Extrai a resposta do Botpress
+          const resposta =
+            bpRes.data?.payload?.text ||
+            'Desculpe, não encontrei informações no regimento. Entre em contato pelo e-mail cipt@secti.al.gov.br ou pelo telefone (82) 3333-4444.';
 
-          // Envia de volta no WhatsApp
+          console.log('🤖 Resposta do Botpress:', resposta);
+
+          // Envia resposta ao usuário no WhatsApp
           await client.sendText(message.from, resposta);
-
         } catch (err) {
           console.error('❌ Erro ao responder:', err.message);
-          await clientInstance.sendText(message.from, "Ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.");
+          await clientInstance.sendText(message.from,
+            'Houve um problema para processar sua mensagem. Tente novamente mais tarde.');
         }
       }
     });
   })
   .catch((error) => console.error('❌ Erro ao iniciar cliente:', error));
 
-app.get('/', (req, res) => res.send('Servidor do Bot CIPT está rodando 🚀'));
+app.get('/', (req, res) =>
+  res.send('🚀 Chatbot CIPT rodando no Render (WPPConnect headless)')
+);
+
 app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
