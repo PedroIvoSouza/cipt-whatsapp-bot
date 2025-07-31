@@ -50,7 +50,7 @@ wppconnect.create({
 
           const resposta =
             bpRes.data?.payload?.text ||
-            'Desculpe, não encontrei informações no regimento. Contate supcti@secti.al.gov.br.';
+            'Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444.';
 
           console.log('🤖 Resposta do Botpress:', resposta);
           await client.sendText(message.from, resposta);
@@ -65,7 +65,7 @@ wppconnect.create({
   .catch((error) => console.error('❌ Erro ao iniciar cliente:', error));
 
 app.get('/', (req, res) =>
-  res.send('🚀 Chatbot CIPT - Te atendendo 24/7')
+  res.send('🚀 Chatbot CIPT rodando no Render (WPPConnect headless)')
 );
 
 app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
