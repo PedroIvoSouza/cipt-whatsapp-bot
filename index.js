@@ -7,15 +7,23 @@ app.use(express.json());
 
 let clientInstance;
 
-wppconnect.create()
+// Inicializa o cliente do WPPConnect
+wppconnect.create({
+  session: 'cipt-session', // nome da sessão
+  puppeteerOptions: { args: ['--no-sandbox'] } // importante para Render
+})
   .then((client) => {
     clientInstance = client;
 
-    // Recebe mensagens do WhatsApp
+    console.log("✅ WPPConnect conectado e rodando...");
+
+    // Escuta mensagens recebidas
     client.onMessage(async (message) => {
-      if (message.isGroupMsg === false) {
+      if (!message.isGroupMsg) {
         try {
-          // Enviar para o Botpress
+          console.log("📩 Mensagem recebida:", message.body);
+
+          // Enviar mensagem para o Botpress
           const bpRes = await axios.post(
             'https://api.botpress.cloud/v1/messages',
             {
@@ -30,15 +38,21 @@ wppconnect.create()
             }
           );
 
-          // Enviar resposta para o WhatsApp
-          const resposta = bpRes.data.payload.text;
-          client.sendText(message.from, resposta);
+          // Extrai resposta do Botpress
+          const resposta = bpRes.data.payload?.text || "Desculpe, não consegui entender sua solicitação.";
+          console.log("🤖 Resposta do Botpress:", resposta);
+
+          // Envia de volta no WhatsApp
+          await client.sendText(message.from, resposta);
+
         } catch (err) {
-          console.error('Erro ao responder:', err.message);
+          console.error('❌ Erro ao responder:', err.message);
+          await clientInstance.sendText(message.from, "Ocorreu um erro ao processar sua mensagem. Tente novamente mais tarde.");
         }
       }
     });
   })
-  .catch((error) => console.log('Erro ao iniciar cliente:', error));
+  .catch((error) => console.error('❌ Erro ao iniciar cliente:', error));
 
-app.listen(3000, () => console.log('Servidor rodando na porta 3000'));
+app.get('/', (req, res) => res.send('Servidor do Bot CIPT está rodando 🚀'));
+app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
