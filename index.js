@@ -1,8 +1,8 @@
+// Corrige erro do Baileys no Node 20+
 const crypto = require("node:crypto");
 global.crypto = crypto;
 
 const express = require('express');
-const qrcode = require('qrcode-terminal');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
@@ -25,10 +25,10 @@ let embeddingsCache = [];
 // Controle de sessões
 const usuariosAtivos = {};
 const timersEncerramento = {};
-const TEMPO_INATIVIDADE = 30 * 60 * 1000; // 30 minutos para boas-vindas
-const TEMPO_ENCERRAMENTO = 5 * 60 * 1000; // 5 minutos para encerrar sessão
+const TEMPO_INATIVIDADE = 30 * 60 * 1000; // 30 min para reexibir boas-vindas
+const TEMPO_ENCERRAMENTO = 5 * 60 * 1000; // 5 min para encerrar
 
-// Função para gerar ou carregar embeddings do PDF
+// Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
   if (fs.existsSync('./embeddings.json')) {
     console.log('📦 Carregando embeddings do cache...');
@@ -61,7 +61,7 @@ async function gerarOuCarregarEmbeddings() {
   console.log(`✅ Embeddings gerados e salvos (${embeddingsCache.length} trechos)`);
 }
 
-// Função para buscar trechos relevantes
+// Buscar trechos relevantes
 async function buscarTrechosRelevantes(pergunta) {
   const perguntaEmbedding = await client.embeddings.create({
     model: "text-embedding-3-small",
@@ -104,8 +104,9 @@ async function startBot() {
   sock.ev.on('connection.update', (update) => {
     const { connection, qr, lastDisconnect } = update;
     if (qr) {
-      console.log('⚡ Escaneie este QR Code abaixo para conectar o WhatsApp:');
-      qrcode.generate(qr, { small: true });
+      const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+      console.log('⚡ Escaneie o QR Code para conectar o WhatsApp:');
+      console.log(`➡️ ${qrLink}`);
     }
     if (connection === 'open') {
       console.log('✅ Conectado ao WhatsApp!');
@@ -135,12 +136,11 @@ async function startBot() {
           messages: [
             {
               role: "system",
-              content: `Você é o assistente virtual do Centro de Inovação do Polo Tecnológico do Jaraguá (CIPT).
-Responda APENAS com base nos trechos abaixo do Regimento Interno.
-Use SEMPRE o tempo verbal PRESENTE.
-Seja simpático e acolhedor. 
+              content: `Você é o assistente virtual do CIPT. 
+Responda APENAS com base nos trechos abaixo do Regimento Interno. 
+Use SEMPRE o tempo verbal PRESENTE. 
 Se não houver resposta clara, diga:
-"Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444."
+"Desculpe, não encontrei informações no regimento. Contate supcti@secti.al.gov.br."
 
 Trechos:
 ${trechos}`
