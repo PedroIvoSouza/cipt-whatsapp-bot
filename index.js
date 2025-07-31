@@ -149,7 +149,7 @@ Responda sempre de forma simpática, acolhedora e clara, no tempo presente.
 Baseie-se APENAS nos trechos abaixo do Regimento Interno e nas informações complementares.
 
 Se a resposta não estiver nos documentos, diga:
-"Desculpe, não encontrei informações no regimento. Contate cipt@secti.al.gov.br ou (82) 3333-4444."
+"Desculpe, não encontrei informações no regimento. Contate supcti@secti.al.gov.br."
 
 Trechos disponíveis:
 ${trechos}`
