@@ -1,34 +1,19 @@
 const express = require('express');
 const axios = require('axios');
-const fs = require('fs');
-const wppconnect = require('@wppconnect-team/wppconnect');
+const venom = require('venom-bot');
 
 const app = express();
 app.use(express.json());
 
 let clientInstance;
 
-wppconnect.create({
+venom.create({
   session: 'cipt-session',
-  headless: true,
-  useChrome: false,
-  puppeteerOptions: {
-    executablePath: null, // força não usar Chrome
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  },
-  disableWelcome: true,
-  tokenStore: 'file',
-  catchQR: (base64Qr, asciiQR) => {
-    console.log('⚡ QRCode recebido (ASCII):');
-    console.log(asciiQR);
-    fs.writeFileSync('qrcode.html', `<img src="${base64Qr}">`);
-    console.log('⚡ QRCode salvo em qrcode.html — abra no Codespaces Preview para escanear no WhatsApp.');
-  }
+  multidevice: true, // compatível com versões mais novas do WhatsApp
 })
 .then((client) => {
   clientInstance = client;
-  console.log('✅ WPPConnect conectado (modo headless)');
+  console.log('✅ Venom conectado ao WhatsApp');
 
   client.onMessage(async (message) => {
     if (!message.isGroupMsg) {
@@ -57,7 +42,7 @@ wppconnect.create({
         await client.sendText(message.from, resposta);
       } catch (err) {
         console.error('❌ Erro ao responder:', err.message);
-        await clientInstance.sendText(message.from,
+        await client.sendText(message.from,
           'Houve um problema ao processar sua mensagem. Tente mais tarde.');
       }
     }
@@ -66,7 +51,7 @@ wppconnect.create({
 .catch((error) => console.error('❌ Erro ao iniciar cliente:', error));
 
 app.get('/', (req, res) =>
-  res.send('🚀 Chatbot CIPT rodando no Render (WPPConnect sem Chrome)')
+  res.send('🚀 Chatbot CIPT rodando com Venom-Bot')
 );
 
 app.listen(3000, () => console.log('🌐 Servidor rodando na porta 3000'));
