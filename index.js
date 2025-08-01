@@ -86,6 +86,49 @@ async function buscarTrechosRelevantes(pergunta) {
     input: pergunta
   });
 
+// Classifica se a mensagem é chamado e sugere categoria
+async function classificarChamado(pergunta) {
+  try {
+    const resp = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { 
+          role: "system", 
+          content: `Você é um classificador de chamados para um condomínio/empresa. 
+          Sua tarefa é responder em JSON no formato: {"ehChamado":"SIM ou NAO","categoria":"Categoria"}.
+          Categorias disponíveis: 
+          - Internet e Rede
+          - Energia Elétrica
+          - Limpeza
+          - Manutenção Civil
+          - Segurança e Portaria
+          - Elevadores
+          - Hidráulica / Vazamentos
+          - Equipamentos / Móveis
+          - Administrativo / Outros
+          
+          Caso não seja chamado, responda {"ehChamado":"NAO","categoria":"N/A"}.
+          Seja objetivo e não adicione nada além do JSON.`
+        },
+        { role: "user", content: pergunta }
+      ],
+      temperature: 0,
+      max_tokens: 50
+    });
+
+    const conteudo = resp.choices[0].message.content.trim();
+    try {
+      return JSON.parse(conteudo);
+    } catch (e) {
+      console.error("⚠️ Erro ao interpretar JSON:", conteudo);
+      return { ehChamado: "NAO", categoria: "N/A" };
+    }
+  } catch (err) {
+    console.error("❌ Erro ao classificar chamado:", err.message);
+    return { ehChamado: "NAO", categoria: "N/A" };
+  }
+}
+  
   const perguntaVector = perguntaEmbedding.data[0].embedding;
 
   const resultados = embeddingsCache.map(e => {
@@ -249,18 +292,20 @@ async function startBot() {
       const nomeContato = msg.pushName || "visitante";
       const agora = Date.now();
 
-      // Chamados
-      if (pergunta.includes("internet") || pergunta.includes("piso") || pergunta.includes("vazamento") || pergunta.includes("quebrado")) {
-        const categoria = pergunta.includes("internet") ? "Internet" :
-          pergunta.includes("piso") ? "Limpeza" :
-            pergunta.includes("vazamento") ? "Manutenção Civil" : "Outros";
+// Chamados (com classificação inteligente)
+const classificacao = await classificarChamado(pergunta);
 
-        const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
+if (classificacao.ehChamado === "SIM") {
+  const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${classificacao.categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
 
-        usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria } };
-        await sock.sendMessage(jid, { text: confirmacao });
-        return;
-      }
+  usuariosAtivos[jid] = { 
+    ...usuariosAtivos[jid], 
+    chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } 
+  };
+
+  await sock.sendMessage(jid, { text: confirmacao });
+  return;
+}
 
       historicoUsuarios[jid] = historicoUsuarios[jid] || [];
       historicoUsuarios[jid].push({ role: "user", content: pergunta });
@@ -292,36 +337,91 @@ async function startBot() {
         }
 
         if (usuariosAtivos[jid]?.chamadoPendente) {
+  
           if (pergunta === "sim") {
             const chamado = usuariosAtivos[jid].chamadoPendente;
             const protocolo = "CH-" + Date.now().toString().slice(-5);
 
+            // 🔎 Usa a função de classificação inteligente
+            const classificacao = await classificarChamado(chamado.descricao);
+            chamado.categoria = classificacao?.categoria || "Outros";
+
             await registrarChamado({
-              protocolo,
-              nome: nomeContato,
-              telefone: jid.split("@")[0],
-              descricao: chamado.descricao,
-              categoria: chamado.categoria,
-              status: "Aberto"
+            protocolo,
+            nome: nomeContato,
+            telefone: jid.split("@")[0],
+            descricao: chamado.descricao,
+            categoria: chamado.categoria,
+            status: "Aberto",
+            usuarioJid: jid // 🔥 salva o JID do usuário
+          });
+
+            await sock.sendMessage(jid, {
+              text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.`
             });
 
-            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.` });
-
+            // 🔥 Envia no grupo com botões e categoria classificada
             if (GRUPO_SUPORTE_JID) {
               await sock.sendMessage(GRUPO_SUPORTE_JID, {
                 text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
-                buttons: [
-                  { buttonId: `atendimento_${protocolo}`, buttonText: { displayText: "Chamado em Atendimento" }, type: 1 },
-                  { buttonId: `concluido_${protocolo}`, buttonText: { displayText: "Chamado Concluído" }, type: 1 },
-                  { buttonId: `rejeitado_${protocolo}`, buttonText: { displayText: "Chamado Rejeitado" }, type: 1 }
-                ],
-                headerType: 1
+                templateButtons: [
+                  { index: 1, quickReplyButton: { displayText: "Chamado em Atendimento", id: `atendimento_${protocolo}` } },
+                  { index: 2, quickReplyButton: { displayText: "Chamado Concluído", id: `concluido_${protocolo}` } },
+                  { index: 3, quickReplyButton: { displayText: "Chamado Rejeitado", id: `rejeitado_${protocolo}` } },
+                ]
               });
             }
 
             delete usuariosAtivos[jid].chamadoPendente;
             return;
           }
+
+  if (pergunta === "não") {
+    await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
+    delete usuariosAtivos[jid].chamadoPendente;
+    return;
+  }
+}
+
+// 🎯 Captura clique nos botões do grupo
+if (msg.message?.templateButtonReplyMessage) {
+  const buttonId = msg.message.templateButtonReplyMessage.selectedId;
+  const jid = msg.key.remoteJid;
+
+if (buttonId.startsWith("atendimento_")) {
+  const protocolo = buttonId.replace("atendimento_", "");
+  const responsavel = msg.pushName || "Equipe Suporte"; // 🔥 nome de quem clicou
+  const usuarioJid = await atualizarStatusChamado(protocolo, "Em Atendimento", responsavel);
+
+  await sock.sendMessage(jid, { text: `📌 Chamado ${protocolo} atualizado para *Em Atendimento* por ${responsavel}.` });
+
+  if (usuarioJid) {
+    await sock.sendMessage(usuarioJid, { text: `📌 Seu chamado ${protocolo} agora está *Em Atendimento* por ${responsavel}.` });
+  }
+}
+
+  if (buttonId.startsWith("concluido_")) {
+    const protocolo = buttonId.replace("concluido_", "");
+    const usuarioJid = await atualizarStatusChamado(protocolo, "Concluído");
+    await sock.sendMessage(jid, { text: `✅ Chamado ${protocolo} atualizado para *Concluído*.` });
+
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { text: `✅ Seu chamado ${protocolo} foi *Concluído*. Obrigado pelo contato!` });
+    }
+  }
+
+  if (buttonId.startsWith("rejeitado_")) {
+    const protocolo = buttonId.replace("rejeitado_", "");
+    const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
+    await sock.sendMessage(jid, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
+
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
+    }
+  }
+}
+
+
 
           if (pergunta === "não") {
             await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
