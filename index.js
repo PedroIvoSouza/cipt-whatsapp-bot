@@ -30,6 +30,8 @@ const timersEncerramento = {};
 const TEMPO_INATIVIDADE = 30 * 60 * 1000;
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const TEMPO_CHECAGEM = 30 * 1000;
+const historicoUsuarios = {};
+const LIMITE_HISTORICO = 6; // número de mensagens para manter no contexto
 
 // Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
@@ -82,6 +84,7 @@ async function buscarTrechosRelevantes(pergunta) {
     model: "text-embedding-3-small",
     input: pergunta
   });
+ 
   const perguntaVector = perguntaEmbedding.data[0].embedding;
 
   const resultados = embeddingsCache.map(e => {
@@ -101,7 +104,15 @@ async function buscarTrechosRelevantes(pergunta) {
   console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
   return selecionados.join("\n\n");
 }
+ // Detecta se a mensagem parece ser um follow-up (continuação)
+function ehFollowUp(pergunta) {
+  const conectores = [
+    "e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"
+  ];
+  const curtas = pergunta.split(" ").length <= 5;
 
+  return conectores.some(c => pergunta.startsWith(c)) || curtas;
+}
 // Saudações simpáticas
 function gerarSaudacao(nome) {
   const opcoes = [
@@ -219,9 +230,20 @@ async function startBot() {
     const msg = messages[0];
     if (!msg.key.fromMe && msg.message?.conversation) {
       const pergunta = msg.message.conversation.toLowerCase().trim();
+      const isFollowUp = ehFollowUp(pergunta);
       const nomeContato = msg.pushName || "visitante";
       const jid = msg.key.remoteJid;
       const agora = Date.now();
+      // Inicializa histórico para o usuário, se não existir
+        historicoUsuarios[jid] = historicoUsuarios[jid] || [];
+
+      // Adiciona a nova pergunta ao histórico
+        historicoUsuarios[jid].push({ role: "user", content: pergunta });
+
+      // Mantém apenas as últimas N interações
+      if (historicoUsuarios[jid].length > LIMITE_HISTORICO) {
+        historicoUsuarios[jid] = historicoUsuarios[jid].slice(-LIMITE_HISTORICO);
+      } 
 
       // 🔎 LOG FORMATADO
     console.log("--------------------------------------------------");
@@ -230,7 +252,11 @@ async function startBot() {
     console.log(`💬 Pergunta: ${pergunta}`);
     console.log("--------------------------------------------------");
     salvarLog(nomeContato, pergunta);
-
+      
+    if (isFollowUp) {
+    console.log("📌 Detecção: mensagem classificada como follow-up.");
+      }
+      
       try {        
         const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
         const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
@@ -261,13 +287,19 @@ async function startBot() {
           const completion = await client.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: `${ciptPrompt}\n⚠️ Importante: não misture informações de seções diferentes (ex.: auditório vs salas de reunião). Responda apenas com base nos trechos mais coerentes.` },
-              { role: "user", content: `Pergunta: ${pergunta}\n\nTrechos disponíveis:\n${trechos}` }
+              { role: "system", content: `${ciptPrompt}\n⚠️ Importante: use apenas trechos coerentes e não misture regras diferentes.` },
+              ...historicoUsuarios[jid],
+              { role: "assistant", content: `Base de consulta:\n${trechos}` },
+              ...(isFollowUp 
+                  ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }]
+                  : [])
             ],
             temperature: 0.2,
             max_tokens: 700
           });
           resposta = completion.choices[0].message.content.trim();
+          // Salva a resposta no histórico
+        historicoUsuarios[jid].push({ role: "assistant", content: resposta });
         }
 
         let saudacaoExtra = "";
@@ -296,6 +328,7 @@ async function startBot() {
             await sock.sendMessage(jid, { text: "Encerrando seu atendimento por inatividade. Se precisar novamente, é só chamar! 😉" });
             delete usuariosAtivos[jid];
             delete timersEncerramento[jid];
+            delete historicoUsuarios[jid];
           }
         }, TEMPO_ENCERRAMENTO);
 
