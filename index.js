@@ -281,98 +281,64 @@ async function startBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (msg.key.fromMe) return;
+  const msg = messages[0];
+  if (msg.key.fromMe) return;
 
-    const jid = msg.key.remoteJid;
+  const jid = msg.key.remoteJid;
 
-    // Grupo
-    if (jid.endsWith("@g.us")) {
-      const textoGrupo =
-        msg.message?.extendedTextMessage?.text?.toLowerCase() ||
-        msg.message?.conversation?.toLowerCase() ||
-        "";
-      if (!textoGrupo.includes("@bot")) return;
+  // Grupo: filtro para mensagens sem @bot
+  if (jid.endsWith("@g.us")) {
+    const textoGrupo =
+      msg.message?.extendedTextMessage?.text?.toLowerCase() ||
+      msg.message?.conversation?.toLowerCase() ||
+      "";
+    if (!textoGrupo.includes("@bot")) return;
+  }
+
+  if (msg.message?.conversation) {
+    const pergunta = msg.message.conversation.toLowerCase().trim();
+    const isFollowUp = ehFollowUp(pergunta);
+    const nomeContato = msg.pushName || "visitante";
+    const agora = Date.now();
+
+    // Chamados (com classificação inteligente)
+    const classificacao = await classificarChamado(pergunta);
+
+    if (classificacao.ehChamado === "SIM") {
+      const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${classificacao.categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
+
+      usuariosAtivos[jid] = { 
+        ...usuariosAtivos[jid], 
+        chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } 
+      };
+
+      await sock.sendMessage(jid, { text: confirmacao });
+      return;
     }
 
-    if (msg.message?.conversation) {
-      const pergunta = msg.message.conversation.toLowerCase().trim();
-      const isFollowUp = ehFollowUp(pergunta);
-      const nomeContato = msg.pushName || "visitante";
-      const agora = Date.now();
+    historicoUsuarios[jid] = historicoUsuarios[jid] || [];
+    historicoUsuarios[jid].push({ role: "user", content: pergunta });
+    if (historicoUsuarios[jid].length > LIMITE_HISTORICO) {
+      historicoUsuarios[jid] = historicoUsuarios[jid].slice(-LIMITE_HISTORICO);
+    }
 
-      // Chamados (com classificação inteligente)
-      const classificacao = await classificarChamado(pergunta);
+    salvarLog(nomeContato, pergunta);
 
-      if (classificacao.ehChamado === "SIM") {
-        const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${classificacao.categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
-
-        usuariosAtivos[jid] = { 
-          ...usuariosAtivos[jid], 
-          chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } 
-        };
-
-        await sock.sendMessage(jid, { text: confirmacao });
+    // Tratamento de confirmação de chamado
+    if (usuariosAtivos[jid]?.chamadoPendente) {
+      if (pergunta === "sim") {
+        // ... seu código de registro do chamado aqui ...
         return;
       }
-
-      historicoUsuarios[jid] = historicoUsuarios[jid] || [];
-      historicoUsuarios[jid].push({ role: "user", content: pergunta });
-      if (historicoUsuarios[jid].length > LIMITE_HISTORICO) {
-        historicoUsuarios[jid] = historicoUsuarios[jid].slice(-LIMITE_HISTORICO);
+      if (pergunta === "não") {
+        await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
+        delete usuariosAtivos[jid].chamadoPendente;
+        return;
       }
+    }
+  }
 
-      salvarLog(nomeContato, pergunta);
-
-      // Tratamento de mensagens de botões e confirmação de chamado
-      if (usuariosAtivos[jid]?.chamadoPendente) {
-        if (pergunta === "sim") {
-          const chamado = usuariosAtivos[jid].chamadoPendente;
-          const protocolo = "CH-" + Date.now().toString().slice(-5);
-            chamado.protocolo = protocolo; // <-- salva protocolo dentro do chamado
-              protocoloPorUsuario[jid] = protocolo;
-
-
-          const classificacao = await classificarChamado(chamado.descricao);
-          chamado.categoria = classificacao?.categoria || "Outros";
-
-          await registrarChamado({
-            protocolo,
-            nome: nomeContato,
-            telefone: jid.split("@")[0],
-            descricao: chamado.descricao,
-            categoria: chamado.categoria,
-            status: "Aberto",
-            usuarioJid: jid
-          });
-
-          // Aqui, guarda o protocolo e o usuário para controlar o status depois
-          chamadosAtivos[protocolo] = { usuarioJid: jid, status: "Aberto" };
-
-          await sock.sendMessage(jid, {
-            text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.`
-          });
-
-   if (GRUPO_SUPORTE_JID) {
-  await sock.sendMessage(GRUPO_SUPORTE_JID, {
-    text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}\n\nResponda com o número correspondente:\n\n1️⃣ - Chamado em Atendimento\n2️⃣ - Chamado Concluído\n3️⃣ - Chamado Rejeitado`
-  });
-}
-        // guarda o protocolo e o JID do usuário para rastrear depois
-  usuariosAtivos[protocolo] = { usuarioJid: jid, responsavel: nomeContato };
-
-          delete usuariosAtivos[jid].chamadoPendente;
-          return;
-        }
-
-        if (pergunta === "não") {
-          await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
-          delete usuariosAtivos[jid].chamadoPendente;
-          return;
-        }
-      }
-
-    // Captura respostas numéricas no grupo de suporte
+  // Captura respostas numéricas no grupo de suporte
 if (jid === GRUPO_SUPORTE_JID) {
   console.log("Mensagem no grupo de suporte:", JSON.stringify(msg.message, null, 2));
   let textoTrim = (
@@ -399,7 +365,7 @@ if (jid === GRUPO_SUPORTE_JID) {
       "3": "Rejeitado"
     };
 
-    const status = statusMap[statusCodigo];  // Definido aqui!
+    const status = statusMap[statusCodigo];
 
     if (!status) {
       await sock.sendMessage(GRUPO_SUPORTE_JID, {
@@ -416,37 +382,131 @@ if (jid === GRUPO_SUPORTE_JID) {
     }
 
     const responsavel = msg.pushName || "Equipe Suporte";
-
     const usuarioJid = await atualizarStatusChamado(protocolo, status, responsavel);
 
     chamadosAtivos[protocolo].responsavel = responsavel;
     chamadosAtivos[protocolo].status = status;
 
-    // Após atualizar o status e antes de enviar a mensagem para o grupo:
-    const textoNegrito = `📌 Chamado ${protocolo} atualizado para *${status}* por ${responsavel}.`;
+    // Evita markdown para não dar problema no WhatsApp mobile
+    const textoSimples = `📌 Chamado ${protocolo} atualizado para ${status} por ${responsavel}.`;
 
-    // Tenta enviar com markdown, se der erro, envia texto simples
-    try {
-      await sock.sendMessage(GRUPO_SUPORTE_JID, { text: textoNegrito });
-    } catch (e) {
-      console.log('Erro ao enviar com markdown, enviando texto simples:', e.message);
-      await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `📌 Chamado ${protocolo} atualizado para ${status} por ${responsavel}.` });
-    }
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: textoSimples });
+
     if (usuarioJid) {
       await sock.sendMessage(usuarioJid, { 
-        text: `📌 Seu chamado ${protocolo} foi atualizado para *${status}*.` 
+        text: `📌 Seu chamado ${protocolo} foi atualizado para ${status}.` 
       });
     }
 
     if (status !== "Em Atendimento") {
       delete chamadosAtivos[protocolo];
     }
+
+    return; // Para evitar que a mensagem caia na lógica de atendimento normal
   } else {
     await sock.sendMessage(GRUPO_SUPORTE_JID, {
       text: `⚠️ Formato inválido. Use:\nCH-XXXXX [1|2|3]\nExemplo: CH-12345 2`
     });
+    return;
   }
 }
+
+  // Se chegou aqui, não é atualização no grupo
+  // Coloque o código do atendimento virtual normal aqui
+  try {
+    const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
+    const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
+    const despedidas = ["tchau", "até mais", "flw", "falou", "até logo", "até breve"];
+
+    if (saudacoes.includes(pergunta)) {
+      const saudacao = `${gerarSaudacao(nomeContato)}\nSou a *IA do CIPT*! Posso te ajudar com dúvidas sobre acesso, reservas de espaços, regras de convivência e tudo mais do nosso regimento interno. Quer saber por onde começar?`;
+      await sock.sendMessage(jid, { text: saudacao });
+      return;
+    }
+
+    if (agradecimentos.includes(pergunta) || despedidas.includes(pergunta)) {
+      await sock.sendMessage(jid, {
+        text: `De nada, ${nomeContato}! Foi um prazer ajudar 🤗\nSe precisar novamente, é só me chamar. Até logo!`
+      });
+      delete usuariosAtivos[jid];
+      if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+      delete timersEncerramento[jid];
+      return;
+    }
+
+    const trechos = await buscarTrechosRelevantes(pergunta);
+    let resposta;
+
+    if (!trechos || trechos.trim().length < 30) {
+      resposta = "Olha, não encontrei essa informação no regimento interno e nem nas bases que eu uso para te responder. Mas você pode falar direto com a administração pelo e-mail supcti@secti.al.gov.br ou passando na recepção do CIPT, que eles resolvem rapidinho.";
+    } else {
+      const completion = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: `${ciptPrompt}\n⚠️ Importante: use apenas trechos coerentes e não misture regras diferentes.` },
+          ...historicoUsuarios[jid],
+          { role: "assistant", content: `Base de consulta:\n${trechos}` },
+          ...(isFollowUp ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }] : [])
+        ],
+        temperature: 0.2,
+        max_tokens: 700
+      });
+      resposta = completion.choices[0].message.content.trim();
+      historicoUsuarios[jid].push({ role: "assistant", content: resposta });
+    }
+
+    let saudacaoExtra = "";
+    if (!usuariosAtivos[jid] || (agora - usuariosAtivos[jid]) > TEMPO_INATIVIDADE) {
+      saudacaoExtra = `${gerarSaudacao(nomeContato)}\nAqui é o assistente virtual do Centro de Inovação do Jaraguá — pode me chamar de *IA do CIPT*.\n\n`;
+    }
+
+    usuariosAtivos[jid] = agora;
+    usuariosSemResposta[jid] = false;
+
+    if (!contatosEnviados[jid]) {
+      const decisao = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Você é um classificador. Responda apenas com SIM ou NÃO. Avalie se a resposta do assistente indica necessidade de enviar um contato humano (ex: reservas, problemas administrativos, dúvidas que não podem ser resolvidas pelo regimento)." },
+          { role: "user", content: `Mensagem do usuário: ${pergunta}\nResposta do assistente: ${resposta}` }
+        ],
+        temperature: 0,
+        max_tokens: 5
+      });
+
+      const precisaContato = decisao.choices[0].message.content.trim().toUpperCase().includes("SIM");
+
+      if (precisaContato) {
+        if (resposta.toLowerCase().includes("auditório")) {
+          await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
+        } else if (resposta.toLowerCase().includes("sala de reunião")) {
+          await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+        }
+        contatosEnviados[jid] = true;
+      }
+    }
+
+    const sugestoes = gerarSugestoes();
+    const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
+    await sock.sendMessage(jid, { text: mensagemFinal });
+
+    if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+    timersEncerramento[jid] = setTimeout(async () => {
+      const tempoPassado = Date.now() - usuariosAtivos[jid];
+      if (tempoPassado >= TEMPO_ENCERRAMENTO) {
+        await sock.sendMessage(jid, { text: "Encerrando seu atendimento por inatividade. Se precisar novamente, é só chamar! 😉" });
+        delete usuariosAtivos[jid];
+        delete timersEncerramento[jid];
+        delete historicoUsuarios[jid];
+        delete contatosEnviados[jid];
+      }
+    }, TEMPO_ENCERRAMENTO);
+
+  } catch (err) {
+    console.error('❌ Erro no processamento:', err.message);
+    usuariosSemResposta[jid] = true;
+  }
+});
       // O bloco 'try...catch' agora engloba a lógica principal do bot
       try {
         const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
