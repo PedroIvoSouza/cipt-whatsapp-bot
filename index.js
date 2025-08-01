@@ -12,6 +12,7 @@ const OpenAI = require('openai');
 const fetch = require('node-fetch');
 const nodemailer = require("nodemailer");
 const { ciptPrompt } = require("./ciptPrompt.js");
+const { registrarChamado, atualizarStatusChamado } = require("./sheetsChamados");
 
 dotenv.config();
 
@@ -33,6 +34,8 @@ const TEMPO_CHECAGEM = 30 * 1000;
 const historicoUsuarios = {};
 const LIMITE_HISTORICO = 6; // número de mensagens para manter no contexto
 const contatosEnviados = {}; // guarda flags de envio por usuário
+const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID; 
+
 
 // Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
@@ -235,6 +238,22 @@ async function startBot() {
       const nomeContato = msg.pushName || "visitante";
       const jid = msg.key.remoteJid;
       const agora = Date.now();
+
+// 🛠️ Verifica se é um possível chamado
+    if (pergunta.includes("internet") || pergunta.includes("piso") || pergunta.includes("vazamento") || pergunta.includes("quebrado")) {
+      const categoria = pergunta.includes("internet") ? "Internet" :
+                      pergunta.includes("piso") ? "Limpeza" :
+                      pergunta.includes("vazamento") ? "Manutenção Civil" :
+                      "Outros";
+
+      const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
+
+      usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria } };
+      await sock.sendMessage(jid, { text: confirmacao });
+      return; // não continua fluxo normal
+    }
+
+
       // Inicializa histórico para o usuário, se não existir
         historicoUsuarios[jid] = historicoUsuarios[jid] || [];
 
@@ -277,6 +296,39 @@ async function startBot() {
           if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
           delete timersEncerramento[jid];
           return;
+        }
+        // 🛠️ Confirmação do chamado
+        if (usuariosAtivos[jid]?.chamadoPendente) {
+          if (pergunta === "sim") {
+            const chamado = usuariosAtivos[jid].chamadoPendente;
+            const protocolo = "CH-" + Date.now().toString().slice(-5);
+
+            await registrarChamado({
+              protocolo,
+              nome: nomeContato,
+              telefone: jid.split("@")[0],
+              descricao: chamado.descricao,
+              categoria: chamado.categoria,
+              status: "Aberto"
+            });
+
+            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.` });
+
+            if (GRUPO_SUPORTE_JID) {
+              await sock.sendMessage(GRUPO_SUPORTE_JID, { 
+                text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}` 
+              });
+            }
+
+            delete usuariosAtivos[jid].chamadoPendente;
+            return;
+          }
+
+          if (pergunta === "não") {
+            await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
+            delete usuariosAtivos[jid].chamadoPendente;
+            return;
+          }
         }
 
         const trechos = await buscarTrechosRelevantes(pergunta);
@@ -350,6 +402,21 @@ async function startBot() {
             delete contatosEnviados[jid];
           }
         }, TEMPO_ENCERRAMENTO);
+          // 🛠️ Atualização de status via grupo (só quando marcado)
+          if (msg.key.remoteJid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.text?.includes("@bot")) {
+            const textoGrupo = msg.message.extendedTextMessage.text.toLowerCase();
+            const match = textoGrupo.match(/(concluído|em andamento)\s+(CH-\d+)/);
+
+            if (match) {
+              const status = match[1] === "concluído" ? "Concluído" : "Em andamento";
+              const protocolo = match[2];
+
+              await atualizarStatusChamado(protocolo, status);
+              await sock.sendMessage(GRUPO_SUPORTE_JID, { 
+                text: `✅ Status do chamado ${protocolo} atualizado para *${status}*.` 
+              });
+            }
+          }
 
       } catch (err) {
         console.error('❌ Erro no processamento:', err.message);
