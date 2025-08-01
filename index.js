@@ -487,12 +487,11 @@ if (!contatosEnviados[jid]) {
   }
 }
 
-
-        const sugestoes = gerarSugestoes();
+                const sugestoes = gerarSugestoes();
         const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
         await sock.sendMessage(jid, { text: mensagemFinal });
 
-                if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+        if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
         timersEncerramento[jid] = setTimeout(async () => {
           const tempoPassado = Date.now() - usuariosAtivos[jid];
           if (tempoPassado >= TEMPO_ENCERRAMENTO) {
@@ -502,15 +501,14 @@ if (!contatosEnviados[jid]) {
             delete historicoUsuarios[jid];
             delete contatosEnviados[jid];
           }
-        }, TEMPO_ENCERRAMENTO); // 👈 fecha o setTimeout aqui
+        }, TEMPO_ENCERRAMENTO); // ✅ fecha apenas o setTimeout aqui
 
-      } catch (err) {
+      } catch (err) { // ✅ agora o catch está no nível certo do try
         console.error('❌ Erro no processamento:', err.message);
         usuariosSemResposta[jid] = true;
       }
-    }
-  });
-
+    } // fecha if (msg.message?.conversation)
+  }); // fecha sock.ev.on('messages.upsert')
 
   setInterval(async () => {
     for (let jid in usuariosSemResposta) {
@@ -522,6 +520,8 @@ if (!contatosEnviados[jid]) {
       }
     }
   }, TEMPO_CHECAGEM);
+}
+
 
 
 startBot();
