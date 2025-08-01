@@ -32,6 +32,7 @@ const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const TEMPO_CHECAGEM = 30 * 1000;
 const historicoUsuarios = {};
 const LIMITE_HISTORICO = 6; // número de mensagens para manter no contexto
+const contatosEnviados = {}; // guarda flags de envio por usuário
 
 // Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
@@ -256,7 +257,7 @@ async function startBot() {
     if (isFollowUp) {
     console.log("📌 Detecção: mensagem classificada como follow-up.");
       }
-      
+
       try {        
         const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
         const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
@@ -310,16 +311,33 @@ async function startBot() {
         usuariosAtivos[jid] = agora;
         usuariosSemResposta[jid] = false;
 
+        // ⚡ Avaliar se é caso de enviar contato
+        if (!contatosEnviados[jid]) {
+          const decisao = await client.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "Você é um classificador. Responda apenas com SIM ou NÃO. Avalie se a resposta do assistente indica necessidade de enviar um contato humano (ex: reservas, problemas administrativos, dúvidas que não podem ser resolvidas pelo regimento)." },
+              { role: "user", content: `Mensagem do usuário: ${pergunta}\nResposta do assistente: ${resposta}` }
+            ],
+            temperature: 0,
+            max_tokens: 5
+          });
+
+          const precisaContato = decisao.choices[0].message.content.trim().toUpperCase().includes("SIM");
+
+          if (precisaContato) {
+            if (resposta.toLowerCase().includes("auditório")) {
+              await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
+            } else if (resposta.toLowerCase().includes("sala de reunião")) {
+              await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+            }
+            contatosEnviados[jid] = true; // flag para não enviar de novo na mesma sessão
+          }
+        }
+
         const sugestoes = gerarSugestoes();
         const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
         await sock.sendMessage(jid, { text: mensagemFinal });
-
-        if (resposta.toLowerCase().includes("auditório")) {
-          await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-        }
-        if (resposta.toLowerCase().includes("sala de reunião")) {
-          await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
-        }
 
         if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
         timersEncerramento[jid] = setTimeout(async () => {
@@ -329,6 +347,7 @@ async function startBot() {
             delete usuariosAtivos[jid];
             delete timersEncerramento[jid];
             delete historicoUsuarios[jid];
+            delete contatosEnviados[jid];
           }
         }, TEMPO_ENCERRAMENTO);
 
@@ -353,6 +372,21 @@ async function startBot() {
 }
 
 startBot();
+
+const { exec } = require("child_process");
+
+// Executa o teste do Google Sheets automaticamente no deploy
+exec("node testeSheets.js", (error, stdout, stderr) => {
+  if (error) {
+    console.error(`❌ Erro no teste Google Sheets: ${error.message}`);
+    return;
+  }
+  if (stderr) {
+    console.error(`⚠️ Aviso no teste Google Sheets: ${stderr}`);
+    return;
+  }
+  console.log(`✅ Resultado do teste Google Sheets:\n${stdout}`);
+});
 
 app.listen(3000, () => {
   console.log('🌐 Servidor rodando na porta 3000');
