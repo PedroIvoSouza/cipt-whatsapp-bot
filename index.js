@@ -375,17 +375,19 @@ async function startBot() {
     // Captura respostas numéricas no grupo de suporte
 if (jid === GRUPO_SUPORTE_JID) {
   console.log("Mensagem no grupo de suporte:", JSON.stringify(msg.message, null, 2));
+let textoTrim = (
+  msg.message?.conversation || 
+  msg.message?.extendedTextMessage?.text || 
+  msg.message?.imageMessage?.caption || 
+  ""
+).trim();
 
-  const texto = 
-    msg.message?.conversation || 
-    msg.message?.extendedTextMessage?.text || 
-    msg.message?.imageMessage?.caption || 
-    "";
+// Remove @bot do início, se existir
+if (textoTrim.toLowerCase().startsWith("@bot")) {
+  textoTrim = textoTrim.slice(4).trim(); // remove '@bot' e espaço
+}
 
-  const textoTrim = texto.trim();
-
-  // Divide o texto em duas partes: protocolo e status
-  const partes = textoTrim.split(/\s+/);
+const partes = textoTrim.split(/\s+/);
 
   if (partes.length === 2) {
     const protocolo = partes[0].toUpperCase(); // Exemplo: CH-12345
