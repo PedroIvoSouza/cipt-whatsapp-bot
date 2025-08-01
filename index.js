@@ -32,10 +32,9 @@ const TEMPO_INATIVIDADE = 30 * 60 * 1000;
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const TEMPO_CHECAGEM = 30 * 1000;
 const historicoUsuarios = {};
-const LIMITE_HISTORICO = 6; // número de mensagens para manter no contexto
-const contatosEnviados = {}; // guarda flags de envio por usuário
-const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID; 
-
+const LIMITE_HISTORICO = 6;
+const contatosEnviados = {};
+const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
 // Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
@@ -50,9 +49,7 @@ async function gerarOuCarregarEmbeddings() {
     const dataBuffer = fs.readFileSync('./regimento.pdf');
     let pdfData = await pdfParse(dataBuffer);
 
-    // Normaliza texto para evitar cortes abruptos
     let textoNormalizado = pdfData.text.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
-
     const fontesExtras = fs.readFileSync('./fontes.txt', 'utf8');
     const fontesNormalizadas = fontesExtras.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
 
@@ -88,7 +85,7 @@ async function buscarTrechosRelevantes(pergunta) {
     model: "text-embedding-3-small",
     input: pergunta
   });
- 
+
   const perguntaVector = perguntaEmbedding.data[0].embedding;
 
   const resultados = embeddingsCache.map(e => {
@@ -100,24 +97,24 @@ async function buscarTrechosRelevantes(pergunta) {
   });
 
   resultados.sort((a, b) => b.score - a.score);
-
-  // Filtro de relevância mínima
   const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
-  const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados).slice(0, 8).map(r => r.trecho);
+  const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados)
+    .slice(0, 8).map(r => r.trecho);
 
   console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
   return selecionados.join("\n\n");
 }
- // Detecta se a mensagem parece ser um follow-up (continuação)
+
+// Detecta follow-up
 function ehFollowUp(pergunta) {
   const conectores = [
     "e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"
   ];
   const curtas = pergunta.split(" ").length <= 5;
-
   return conectores.some(c => pergunta.startsWith(c)) || curtas;
 }
-// Saudações simpáticas
+
+// Saudações
 function gerarSaudacao(nome) {
   const opcoes = [
     `Olá, ${nome}! 👋`,
@@ -129,7 +126,7 @@ function gerarSaudacao(nome) {
   return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
 
-// Sugestões dinâmicas de perguntas
+// Sugestões dinâmicas
 function gerarSugestoes() {
   const opcoes = [
     "Como faço para reservar o auditório?",
@@ -152,7 +149,7 @@ function gerarSugestoes() {
 `;
 }
 
-// Enviar vCard com fallback só se necessário
+// Enviar vCard
 async function enviarContato(sock, jid, nome, telefone) {
   try {
     const sentMsg = await sock.sendMessage(jid, {
@@ -196,7 +193,7 @@ async function enviarEmail(assunto, mensagem) {
   }
 }
 
-// ✅ Função para salvar logs
+// Salvar logs
 function salvarLog(nome, pergunta) {
   const data = new Date().toLocaleString("pt-BR");
   const linha = `[${data}] 👤 ${nome}: 💬 ${pergunta}\n`;
@@ -207,6 +204,7 @@ function salvarLog(nome, pergunta) {
   });
 }
 
+// Inicialização do bot
 async function startBot() {
   await gerarOuCarregarEmbeddings();
 
@@ -232,52 +230,47 @@ async function startBot() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.key.fromMe && msg.message?.conversation) {
+    if (msg.key.fromMe) return;
+
+    const jid = msg.key.remoteJid;
+
+    // Grupo
+    if (jid.endsWith("@g.us")) {
+      const textoGrupo =
+        msg.message?.extendedTextMessage?.text?.toLowerCase() ||
+        msg.message?.conversation?.toLowerCase() ||
+        "";
+      if (!textoGrupo.includes("@bot")) return;
+    }
+
+    if (msg.message?.conversation) {
       const pergunta = msg.message.conversation.toLowerCase().trim();
       const isFollowUp = ehFollowUp(pergunta);
       const nomeContato = msg.pushName || "visitante";
-      const jid = msg.key.remoteJid;
       const agora = Date.now();
 
-// 🛠️ Verifica se é um possível chamado
-    if (pergunta.includes("internet") || pergunta.includes("piso") || pergunta.includes("vazamento") || pergunta.includes("quebrado")) {
-      const categoria = pergunta.includes("internet") ? "Internet" :
-                      pergunta.includes("piso") ? "Limpeza" :
-                      pergunta.includes("vazamento") ? "Manutenção Civil" :
-                      "Outros";
+      // Chamados
+      if (pergunta.includes("internet") || pergunta.includes("piso") || pergunta.includes("vazamento") || pergunta.includes("quebrado")) {
+        const categoria = pergunta.includes("internet") ? "Internet" :
+          pergunta.includes("piso") ? "Limpeza" :
+            pergunta.includes("vazamento") ? "Manutenção Civil" : "Outros";
 
-      const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
+        const confirmacao = `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${categoria}\n\nResponda com "Sim" para confirmar ou "Não" para cancelar.`;
 
-      usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria } };
-      await sock.sendMessage(jid, { text: confirmacao });
-      return; // não continua fluxo normal
-    }
-
-
-      // Inicializa histórico para o usuário, se não existir
-        historicoUsuarios[jid] = historicoUsuarios[jid] || [];
-
-      // Adiciona a nova pergunta ao histórico
-        historicoUsuarios[jid].push({ role: "user", content: pergunta });
-
-      // Mantém apenas as últimas N interações
-      if (historicoUsuarios[jid].length > LIMITE_HISTORICO) {
-        historicoUsuarios[jid] = historicoUsuarios[jid].slice(-LIMITE_HISTORICO);
-      } 
-
-      // 🔎 LOG FORMATADO
-    console.log("--------------------------------------------------");
-    console.log(`📩 Nova mensagem recebida!`);
-    console.log(`👤 Contato: ${nomeContato}`);
-    console.log(`💬 Pergunta: ${pergunta}`);
-    console.log("--------------------------------------------------");
-    salvarLog(nomeContato, pergunta);
-      
-    if (isFollowUp) {
-    console.log("📌 Detecção: mensagem classificada como follow-up.");
+        usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria } };
+        await sock.sendMessage(jid, { text: confirmacao });
+        return;
       }
 
-      try {        
+      historicoUsuarios[jid] = historicoUsuarios[jid] || [];
+      historicoUsuarios[jid].push({ role: "user", content: pergunta });
+      if (historicoUsuarios[jid].length > LIMITE_HISTORICO) {
+        historicoUsuarios[jid] = historicoUsuarios[jid].slice(-LIMITE_HISTORICO);
+      }
+
+      salvarLog(nomeContato, pergunta);
+
+      try {
         const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
         const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
         const despedidas = ["tchau", "até mais", "flw", "falou", "até logo", "até breve"];
@@ -289,7 +282,7 @@ async function startBot() {
         }
 
         if (agradecimentos.includes(pergunta) || despedidas.includes(pergunta)) {
-          await sock.sendMessage(jid, { 
+          await sock.sendMessage(jid, {
             text: `De nada, ${nomeContato}! Foi um prazer ajudar 🤗\nSe precisar novamente, é só me chamar. Até logo!`
           });
           delete usuariosAtivos[jid];
@@ -297,7 +290,7 @@ async function startBot() {
           delete timersEncerramento[jid];
           return;
         }
-        // 🛠️ Confirmação do chamado
+
         if (usuariosAtivos[jid]?.chamadoPendente) {
           if (pergunta === "sim") {
             const chamado = usuariosAtivos[jid].chamadoPendente;
@@ -315,8 +308,14 @@ async function startBot() {
             await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.` });
 
             if (GRUPO_SUPORTE_JID) {
-              await sock.sendMessage(GRUPO_SUPORTE_JID, { 
-                text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}` 
+              await sock.sendMessage(GRUPO_SUPORTE_JID, {
+                text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
+                buttons: [
+                  { buttonId: `atendimento_${protocolo}`, buttonText: { displayText: "Chamado em Atendimento" }, type: 1 },
+                  { buttonId: `concluido_${protocolo}`, buttonText: { displayText: "Chamado Concluído" }, type: 1 },
+                  { buttonId: `rejeitado_${protocolo}`, buttonText: { displayText: "Chamado Rejeitado" }, type: 1 }
+                ],
+                headerType: 1
               });
             }
 
@@ -343,16 +342,13 @@ async function startBot() {
               { role: "system", content: `${ciptPrompt}\n⚠️ Importante: use apenas trechos coerentes e não misture regras diferentes.` },
               ...historicoUsuarios[jid],
               { role: "assistant", content: `Base de consulta:\n${trechos}` },
-              ...(isFollowUp 
-                  ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }]
-                  : [])
+              ...(isFollowUp ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }] : [])
             ],
             temperature: 0.2,
             max_tokens: 700
           });
           resposta = completion.choices[0].message.content.trim();
-          // Salva a resposta no histórico
-        historicoUsuarios[jid].push({ role: "assistant", content: resposta });
+          historicoUsuarios[jid].push({ role: "assistant", content: resposta });
         }
 
         let saudacaoExtra = "";
@@ -363,7 +359,6 @@ async function startBot() {
         usuariosAtivos[jid] = agora;
         usuariosSemResposta[jid] = false;
 
-        // ⚡ Avaliar se é caso de enviar contato
         if (!contatosEnviados[jid]) {
           const decisao = await client.chat.completions.create({
             model: "gpt-4o-mini",
@@ -383,7 +378,7 @@ async function startBot() {
             } else if (resposta.toLowerCase().includes("sala de reunião")) {
               await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
             }
-            contatosEnviados[jid] = true; // flag para não enviar de novo na mesma sessão
+            contatosEnviados[jid] = true;
           }
         }
 
@@ -402,21 +397,6 @@ async function startBot() {
             delete contatosEnviados[jid];
           }
         }, TEMPO_ENCERRAMENTO);
-          // 🛠️ Atualização de status via grupo (só quando marcado)
-          if (msg.key.remoteJid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.text?.includes("@bot")) {
-            const textoGrupo = msg.message.extendedTextMessage.text.toLowerCase();
-            const match = textoGrupo.match(/(concluído|em andamento)\s+(CH-\d+)/);
-
-            if (match) {
-              const status = match[1] === "concluído" ? "Concluído" : "Em andamento";
-              const protocolo = match[2];
-
-              await atualizarStatusChamado(protocolo, status);
-              await sock.sendMessage(GRUPO_SUPORTE_JID, { 
-                text: `✅ Status do chamado ${protocolo} atualizado para *${status}*.` 
-              });
-            }
-          }
 
       } catch (err) {
         console.error('❌ Erro no processamento:', err.message);
@@ -425,7 +405,6 @@ async function startBot() {
     }
   });
 
-  // Checagem periódica
   setInterval(async () => {
     for (let jid in usuariosSemResposta) {
       if (usuariosSemResposta[jid]) {
@@ -441,8 +420,6 @@ async function startBot() {
 startBot();
 
 const { exec } = require("child_process");
-
-// Executa o teste do Google Sheets automaticamente no deploy
 exec("node testeSheets.js", (error, stdout, stderr) => {
   if (error) {
     console.error(`❌ Erro no teste Google Sheets: ${error.message}`);
