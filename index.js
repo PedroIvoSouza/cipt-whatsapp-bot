@@ -492,7 +492,7 @@ if (!contatosEnviados[jid]) {
         const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
         await sock.sendMessage(jid, { text: mensagemFinal });
 
-        if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+                if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
         timersEncerramento[jid] = setTimeout(async () => {
           const tempoPassado = Date.now() - usuariosAtivos[jid];
           if (tempoPassado >= TEMPO_ENCERRAMENTO) {
@@ -502,12 +502,15 @@ if (!contatosEnviados[jid]) {
             delete historicoUsuarios[jid];
             delete contatosEnviados[jid];
           }
-}, TEMPO_ENCERRAMENTO);
-} catch (err) {
-  console.error('❌ Erro no processamento:', err.message);
-  usuariosSemResposta[jid] = true;
-}
-});
+        }, TEMPO_ENCERRAMENTO); // 👈 fecha o setTimeout aqui
+
+      } catch (err) {
+        console.error('❌ Erro no processamento:', err.message);
+        usuariosSemResposta[jid] = true;
+      }
+    }
+  });
+
 
   setInterval(async () => {
     for (let jid in usuariosSemResposta) {
