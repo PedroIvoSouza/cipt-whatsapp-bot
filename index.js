@@ -418,73 +418,75 @@ if (buttonId.startsWith("atendimento_")) {
   }
 
   if (buttonId.startsWith("rejeitado_")) {
-    const protocolo = buttonId.replace("rejeitado_", "");
-    const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
-    await sock.sendMessage(jid, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
+  const protocolo = buttonId.replace("rejeitado_", "");
+  const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
+  await sock.sendMessage(jid, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
 
-    if (usuarioJid) {
-      await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
-    }
+  if (usuarioJid) {
+    await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
   }
 }
-          if (pergunta === "não") {
-            await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
-            delete usuariosAtivos[jid].chamadoPendente;
-            return;
-          }
-        }
 
-        const trechos = await buscarTrechosRelevantes(pergunta);
-        let resposta;
+// 👇 sem esse `}` aqui (era o que quebrava o try/catch)
 
-        if (!trechos || trechos.trim().length < 30) {
-          resposta = "Olha, não encontrei essa informação no regimento interno e nem nas bases que eu uso para te responder. Mas você pode falar direto com a administração pelo e-mail supcti@secti.al.gov.br ou passando na recepção do CIPT, que eles resolvem rapidinho.";
-        } else {
-          const completion = await client.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: `${ciptPrompt}\n⚠️ Importante: use apenas trechos coerentes e não misture regras diferentes.` },
-              ...historicoUsuarios[jid],
-              { role: "assistant", content: `Base de consulta:\n${trechos}` },
-              ...(isFollowUp ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }] : [])
-            ],
-            temperature: 0.2,
-            max_tokens: 700
-          });
-          resposta = completion.choices[0].message.content.trim();
-          historicoUsuarios[jid].push({ role: "assistant", content: resposta });
-        }
+if (pergunta === "não") {
+  await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
+  delete usuariosAtivos[jid].chamadoPendente;
+  return;
+}
 
-        let saudacaoExtra = "";
-        if (!usuariosAtivos[jid] || (agora - usuariosAtivos[jid]) > TEMPO_INATIVIDADE) {
-          saudacaoExtra = `${gerarSaudacao(nomeContato)}\nAqui é o assistente virtual do Centro de Inovação do Jaraguá — pode me chamar de *IA do CIPT*.\n\n`;
-        }
+const trechos = await buscarTrechosRelevantes(pergunta);
+let resposta;
 
-        usuariosAtivos[jid] = agora;
-        usuariosSemResposta[jid] = false;
+if (!trechos || trechos.trim().length < 30) {
+  resposta = "Olha, não encontrei essa informação no regimento interno e nem nas bases que eu uso para te responder. Mas você pode falar direto com a administração pelo e-mail supcti@secti.al.gov.br ou passando na recepção do CIPT, que eles resolvem rapidinho.";
+} else {
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: `${ciptPrompt}\n⚠️ Importante: use apenas trechos coerentes e não misture regras diferentes.` },
+      ...historicoUsuarios[jid],
+      { role: "assistant", content: `Base de consulta:\n${trechos}` },
+      ...(isFollowUp ? [{ role: "system", content: "⚡ A mensagem é uma continuação. Responda levando em conta o histórico acima, sem repetir informações já dadas." }] : [])
+    ],
+    temperature: 0.2,
+    max_tokens: 700
+  });
+  resposta = completion.choices[0].message.content.trim();
+  historicoUsuarios[jid].push({ role: "assistant", content: resposta });
+}
 
-        if (!contatosEnviados[jid]) {
-          const decisao = await client.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              { role: "system", content: "Você é um classificador. Responda apenas com SIM ou NÃO. Avalie se a resposta do assistente indica necessidade de enviar um contato humano (ex: reservas, problemas administrativos, dúvidas que não podem ser resolvidas pelo regimento)." },
-              { role: "user", content: `Mensagem do usuário: ${pergunta}\nResposta do assistente: ${resposta}` }
-            ],
-            temperature: 0,
-            max_tokens: 5
-          });
+let saudacaoExtra = "";
+if (!usuariosAtivos[jid] || (agora - usuariosAtivos[jid]) > TEMPO_INATIVIDADE) {
+  saudacaoExtra = `${gerarSaudacao(nomeContato)}\nAqui é o assistente virtual do Centro de Inovação do Jaraguá — pode me chamar de *IA do CIPT*.\n\n`;
+}
 
-          const precisaContato = decisao.choices[0].message.content.trim().toUpperCase().includes("SIM");
+usuariosAtivos[jid] = agora;
+usuariosSemResposta[jid] = false;
 
-          if (precisaContato) {
-            if (resposta.toLowerCase().includes("auditório")) {
-              await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-            } else if (resposta.toLowerCase().includes("sala de reunião")) {
-              await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
-            }
-            contatosEnviados[jid] = true;
-          }
-        }
+if (!contatosEnviados[jid]) {
+  const decisao = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "Você é um classificador. Responda apenas com SIM ou NÃO. Avalie se a resposta do assistente indica necessidade de enviar um contato humano (ex: reservas, problemas administrativos, dúvidas que não podem ser resolvidas pelo regimento)." },
+      { role: "user", content: `Mensagem do usuário: ${pergunta}\nResposta do assistente: ${resposta}` }
+    ],
+    temperature: 0,
+    max_tokens: 5
+  });
+
+  const precisaContato = decisao.choices[0].message.content.trim().toUpperCase().includes("SIM");
+
+  if (precisaContato) {
+    if (resposta.toLowerCase().includes("auditório")) {
+      await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
+    } else if (resposta.toLowerCase().includes("sala de reunião")) {
+      await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+    }
+    contatosEnviados[jid] = true;
+  }
+}
+
 
         const sugestoes = gerarSugestoes();
         const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
