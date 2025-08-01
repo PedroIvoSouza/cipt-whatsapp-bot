@@ -35,6 +35,9 @@ const historicoUsuarios = {};
 const LIMITE_HISTORICO = 6;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
+const chamadosAtivos = {};
+const protocoloPorUsuario = {};
+
 
 // Função para gerar ou carregar embeddings
 async function gerarOuCarregarEmbeddings() {
@@ -326,6 +329,9 @@ async function startBot() {
         if (pergunta === "sim") {
           const chamado = usuariosAtivos[jid].chamadoPendente;
           const protocolo = "CH-" + Date.now().toString().slice(-5);
+            chamado.protocolo = protocolo; // <-- salva protocolo dentro do chamado
+              protocoloPorUsuario[jid] = protocolo;
+
 
           const classificacao = await classificarChamado(chamado.descricao);
           chamado.categoria = classificacao?.categoria || "Outros";
@@ -340,23 +346,20 @@ async function startBot() {
             usuarioJid: jid
           });
 
+          // Aqui, guarda o protocolo e o usuário para controlar o status depois
+          chamadosAtivos[protocolo] = { usuarioJid: jid, status: "Aberto" };
+
           await sock.sendMessage(jid, {
             text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.`
           });
 
-        if (GRUPO_SUPORTE_JID) {
+   if (GRUPO_SUPORTE_JID) {
   await sock.sendMessage(GRUPO_SUPORTE_JID, {
-    text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
-    buttons: [
-      { buttonId: `atendimento_${protocolo}`, buttonText: { displayText: "Chamado em Atendimento" }, type: 1 },
-      { buttonId: `concluido_${protocolo}`, buttonText: { displayText: "Chamado Concluído" }, type: 1 },
-      { buttonId: `rejeitado_${protocolo}`, buttonText: { displayText: "Chamado Rejeitado" }, type: 1 }
-    ],
-    headerType: 1
+    text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}\n\nResponda com o número correspondente:\n\n1️⃣ - Chamado em Atendimento\n2️⃣ - Chamado Concluído\n3️⃣ - Chamado Rejeitado`
   });
 }
-
-
+        // guarda o protocolo e o JID do usuário para rastrear depois
+  usuariosAtivos[protocolo] = { usuarioJid: jid, responsavel: nomeContato };
 
           delete usuariosAtivos[jid].chamadoPendente;
           return;
@@ -369,34 +372,72 @@ async function startBot() {
         }
       }
 
-      // Captura clique nos botões do grupo
-      if (msg.message?.buttonsResponseMessage && msg.key.remoteJid === GRUPO_SUPORTE_JID) {
-  const buttonId = msg.message.buttonsResponseMessage.selectedButtonId;
-  const responsavel = msg.pushName || "Equipe Suporte";
-  const protocolo = buttonId.split("_")[1];
+     // Captura respostas numéricas no grupo de suporte
+if (jid === GRUPO_SUPORTE_JID && msg.message?.conversation) {
+  const texto = msg.message.conversation.trim();
 
-  if (buttonId.startsWith("atendimento_")) {
-    const usuarioJid = await atualizarStatusChamado(protocolo, "Em Atendimento", responsavel);
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `📌 Chamado ${protocolo} atualizado para *Em Atendimento* por ${responsavel}.` });
-    if (usuarioJid) {
-      await sock.sendMessage(usuarioJid, { text: `📌 Seu chamado ${protocolo} agora está *Em Atendimento*.` });
-    }
-  }
+  // Divide o texto em duas partes: protocolo e status
+  const partes = texto.split(/\s+/);
 
-  if (buttonId.startsWith("concluido_")) {
-    const usuarioJid = await atualizarStatusChamado(protocolo, "Concluído");
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `✅ Chamado ${protocolo} atualizado para *Concluído*.` });
-    if (usuarioJid) {
-      await sock.sendMessage(usuarioJid, { text: `✅ Seu chamado ${protocolo} foi *Concluído*. Obrigado pelo contato!` });
-    }
-  }
+  if (partes.length === 2) {
+    const protocolo = partes[0].toUpperCase(); // Exemplo: CH-12345
+    const statusCodigo = partes[1]; // Exemplo: "1", "2", "3"
 
-  if (buttonId.startsWith("rejeitado_")) {
-    const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
-    if (usuarioJid) {
-      await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
+    // Validação do status
+    const statusMap = {
+      "1": "Em Atendimento",
+      "2": "Concluído",
+      "3": "Rejeitado"
+    };
+
+    const status = statusMap[statusCodigo];
+
+    if (!status) {
+      await sock.sendMessage(GRUPO_SUPORTE_JID, {
+        text: `❌ Código de status inválido: ${statusCodigo}. Use 1, 2 ou 3.`
+      });
+      return;
     }
+
+    // Verifica se o protocolo existe no objeto local
+    if (!chamadosAtivos[protocolo]) {
+      await sock.sendMessage(GRUPO_SUPORTE_JID, {
+        text: `❌ Protocolo ${protocolo} não encontrado ou já finalizado.`
+      });
+      return;
+    }
+
+    // Quem respondeu no grupo será o responsável pela atualização
+    const responsavel = msg.pushName || "Equipe Suporte";
+
+    // Atualiza o status no Google Sheets ou sistema externo, passando o responsável
+    const usuarioJid = await atualizarStatusChamado(protocolo, status, responsavel);
+
+    // Atualiza a memória local para acompanhar o responsável e status atuais
+    chamadosAtivos[protocolo].responsavel = responsavel;
+    chamadosAtivos[protocolo].status = status;
+
+    // Envia mensagem ao grupo confirmando a atualização
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { 
+      text: `📌 Chamado ${protocolo} atualizado para *${status}* por ${responsavel}.` 
+    });
+
+    // Notifica o usuário que abriu o chamado, se possível
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { 
+        text: `📌 Seu chamado ${protocolo} foi atualizado para *${status}*.` 
+      });
+    }
+
+    // Remove da lista local se status for finalizado (não "Em Atendimento")
+    if (status !== "Em Atendimento") {
+      delete chamadosAtivos[protocolo];
+    }
+  } else {
+    // Se não for formato protocolo + status, pode enviar uma mensagem explicativa
+    await sock.sendMessage(GRUPO_SUPORTE_JID, {
+      text: `⚠️ Formato inválido. Use:\nCH-XXXXX [1|2|3]\nExemplo: CH-12345 2`
+    });
   }
 }
 
