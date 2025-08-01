@@ -11,6 +11,8 @@ async function teste() {
     const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
     const spreadsheetId = process.env.SHEET_ID;
 
+    console.log("📌 SHEET_ID carregado:", spreadsheetId);
+
     const dataHora = new Date().toLocaleString("pt-BR");
     const valores = [
       ["TESTE-001", dataHora, "Bot CIPT", "000000000", "Teste de integração", "Infraestrutura", "Aberto", ""]
