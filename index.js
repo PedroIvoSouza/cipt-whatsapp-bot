@@ -372,12 +372,20 @@ async function startBot() {
         }
       }
 
-     // Captura respostas numéricas no grupo de suporte
-if (jid === GRUPO_SUPORTE_JID && msg.message?.conversation) {
-  const texto = msg.message.conversation.trim();
+    // Captura respostas numéricas no grupo de suporte
+if (jid === GRUPO_SUPORTE_JID) {
+  console.log("Mensagem no grupo de suporte:", JSON.stringify(msg.message, null, 2));
+
+  const texto = 
+    msg.message?.conversation || 
+    msg.message?.extendedTextMessage?.text || 
+    msg.message?.imageMessage?.caption || 
+    "";
+
+  const textoTrim = texto.trim();
 
   // Divide o texto em duas partes: protocolo e status
-  const partes = texto.split(/\s+/);
+  const partes = textoTrim.split(/\s+/);
 
   if (partes.length === 2) {
     const protocolo = partes[0].toUpperCase(); // Exemplo: CH-12345
@@ -440,6 +448,7 @@ if (jid === GRUPO_SUPORTE_JID && msg.message?.conversation) {
     });
   }
 }
+
 
 
       // O bloco 'try...catch' agora engloba a lógica principal do bot
