@@ -344,16 +344,19 @@ async function startBot() {
             text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamado.categoria}\n\nA equipe já foi notificada.`
           });
 
-          if (GRUPO_SUPORTE_JID) {
-            await sock.sendMessage(GRUPO_SUPORTE_JID, {
-              text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
-              templateButtons: [
-                { index: 1, quickReplyButton: { displayText: "Chamado em Atendimento", id: `atendimento_${protocolo}` } },
-                { index: 2, quickReplyButton: { displayText: "Chamado Concluído", id: `concluido_${protocolo}` } },
-                { index: 3, quickReplyButton: { displayText: "Chamado Rejeitado", id: `rejeitado_${protocolo}` } },
-              ]
-            });
-          }
+        if (GRUPO_SUPORTE_JID) {
+  await sock.sendMessage(GRUPO_SUPORTE_JID, {
+    text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
+    buttons: [
+      { buttonId: `atendimento_${protocolo}`, buttonText: { displayText: "Chamado em Atendimento" }, type: 1 },
+      { buttonId: `concluido_${protocolo}`, buttonText: { displayText: "Chamado Concluído" }, type: 1 },
+      { buttonId: `rejeitado_${protocolo}`, buttonText: { displayText: "Chamado Rejeitado" }, type: 1 }
+    ],
+    headerType: 1
+  });
+}
+
+
 
           delete usuariosAtivos[jid].chamadoPendente;
           return;
@@ -367,42 +370,36 @@ async function startBot() {
       }
 
       // Captura clique nos botões do grupo
-      if (msg.message?.templateButtonReplyMessage) {
-        const buttonId = msg.message.templateButtonReplyMessage.selectedId;
-        const jid = msg.key.remoteJid;
+      if (msg.message?.buttonsResponseMessage && msg.key.remoteJid === GRUPO_SUPORTE_JID) {
+  const buttonId = msg.message.buttonsResponseMessage.selectedButtonId;
+  const responsavel = msg.pushName || "Equipe Suporte";
+  const protocolo = buttonId.split("_")[1];
 
-        if (buttonId.startsWith("atendimento_")) {
-          const protocolo = buttonId.replace("atendimento_", "");
-          const responsavel = msg.pushName || "Equipe Suporte";
-          const usuarioJid = await atualizarStatusChamado(protocolo, "Em Atendimento", responsavel);
+  if (buttonId.startsWith("atendimento_")) {
+    const usuarioJid = await atualizarStatusChamado(protocolo, "Em Atendimento", responsavel);
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `📌 Chamado ${protocolo} atualizado para *Em Atendimento* por ${responsavel}.` });
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { text: `📌 Seu chamado ${protocolo} agora está *Em Atendimento*.` });
+    }
+  }
 
-          await sock.sendMessage(jid, { text: `📌 Chamado ${protocolo} atualizado para *Em Atendimento* por ${responsavel}.` });
+  if (buttonId.startsWith("concluido_")) {
+    const usuarioJid = await atualizarStatusChamado(protocolo, "Concluído");
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `✅ Chamado ${protocolo} atualizado para *Concluído*.` });
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { text: `✅ Seu chamado ${protocolo} foi *Concluído*. Obrigado pelo contato!` });
+    }
+  }
 
-          if (usuarioJid) {
-            await sock.sendMessage(usuarioJid, { text: `📌 Seu chamado ${protocolo} agora está *Em Atendimento* por ${responsavel}.` });
-          }
-        }
+  if (buttonId.startsWith("rejeitado_")) {
+    const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
+    if (usuarioJid) {
+      await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
+    }
+  }
+}
 
-        if (buttonId.startsWith("concluido_")) {
-          const protocolo = buttonId.replace("concluido_", "");
-          const usuarioJid = await atualizarStatusChamado(protocolo, "Concluído");
-          await sock.sendMessage(jid, { text: `✅ Chamado ${protocolo} atualizado para *Concluído*.` });
-
-          if (usuarioJid) {
-            await sock.sendMessage(usuarioJid, { text: `✅ Seu chamado ${protocolo} foi *Concluído*. Obrigado pelo contato!` });
-          }
-        }
-
-        if (buttonId.startsWith("rejeitado_")) {
-          const protocolo = buttonId.replace("rejeitado_", "");
-          const usuarioJid = await atualizarStatusChamado(protocolo, "Rejeitado");
-          await sock.sendMessage(jid, { text: `❌ Chamado ${protocolo} atualizado para *Rejeitado*.` });
-
-          if (usuarioJid) {
-            await sock.sendMessage(usuarioJid, { text: `❌ Seu chamado ${protocolo} foi *Rejeitado*. Caso necessário, entre em contato novamente.` });
-          }
-        }
-      }
 
       // O bloco 'try...catch' agora engloba a lógica principal do bot
       try {
