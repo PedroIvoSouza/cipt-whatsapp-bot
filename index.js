@@ -42,18 +42,23 @@ async function gerarOuCarregarEmbeddings() {
 
     console.log("📄 Lendo regimento e fontes extras...");
     const dataBuffer = fs.readFileSync('./regimento.pdf');
-    const pdfData = await pdfParse(dataBuffer);
+    let pdfData = await pdfParse(dataBuffer);
+
+    // Normaliza texto para evitar cortes abruptos
+    let textoNormalizado = pdfData.text.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
+
     const fontesExtras = fs.readFileSync('./fontes.txt', 'utf8');
+    const fontesNormalizadas = fontesExtras.replace(/\n\s*\n/g, '\n').replace(/\s+/g, ' ');
 
-    const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 700, chunkOverlap: 100 });
+    const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1200, chunkOverlap: 200 });
 
-    const pdfDividido = await splitter.splitText(pdfData.text);
-    const fontesDivididas = await splitter.splitText(fontesExtras);
+    const pdfDividido = await splitter.splitText(textoNormalizado);
+    const fontesDivididas = await splitter.splitText(fontesNormalizadas);
     pdfChunks = [...pdfDividido, ...fontesDivididas];
+
     console.log(`📚 Regimento dividido em ${pdfDividido.length} trechos.`);
     console.log(`📚 Fontes extras divididas em ${fontesDivididas.length} trechos.`);
-    console.log(`📚 Total carregado: ${pdfChunks.length} trechos.`);
-    console.log(`📄 Total de trechos gerados: ${pdfChunks.length}`);
+    console.log(`📄 Total carregado: ${pdfChunks.length} trechos.`);
 
     console.log("⚙️ Gerando embeddings...");
     for (let chunk of pdfChunks) {
@@ -79,7 +84,6 @@ async function buscarTrechosRelevantes(pergunta) {
   });
   const perguntaVector = perguntaEmbedding.data[0].embedding;
 
-  // Calcula similaridade para cada embedding
   const resultados = embeddingsCache.map(e => {
     const dot = perguntaVector.reduce((acc, val, idx) => acc + val * e.vector[idx], 0);
     const magA = Math.sqrt(perguntaVector.reduce((acc, val) => acc + val * val, 0));
@@ -88,20 +92,15 @@ async function buscarTrechosRelevantes(pergunta) {
     return { trecho: e.trecho, score };
   });
 
-  // Ordena por relevância
   resultados.sort((a, b) => b.score - a.score);
 
-  // Ajuste dinâmico: mais trechos para perguntas longas
-  const numeroTrechos = pergunta.split(" ").length > 15 ? 12 : 8;
+  // Filtro de relevância mínima
+  const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
+  const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados).slice(0, 8).map(r => r.trecho);
 
-  // Sempre retorna algo — mesmo que o score seja baixo
-  const selecionados = resultados.slice(0, numeroTrechos).map(r => r.trecho);
-
-  console.log(`🔎 Resgatados ${selecionados.length} trechos para a resposta.`);
-
-  return selecionados.length > 0 ? selecionados.join("\n\n") : null;
+  console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
+  return selecionados.join("\n\n");
 }
-
 
 // Saudações simpáticas
 function gerarSaudacao(nome) {
@@ -129,9 +128,7 @@ function gerarSugestoes() {
     "Quais são os documentos necessários para reservar um espaço?",
     "Como funciona o restaurante-escola?",
   ];
-
   const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 3);
-
   return `
 ℹ️ Você também pode me perguntar, por exemplo:
 - ${sorteadas[0]}
@@ -184,6 +181,17 @@ async function enviarEmail(assunto, mensagem) {
   }
 }
 
+// ✅ Função para salvar logs
+function salvarLog(nome, pergunta) {
+  const data = new Date().toLocaleString("pt-BR");
+  const linha = `[${data}] 👤 ${nome}: 💬 ${pergunta}\n`;
+  fs.appendFile("mensagens.log", linha, (err) => {
+    if (err) {
+      console.error("❌ Erro ao salvar log:", err);
+    }
+  });
+}
+
 async function startBot() {
   await gerarOuCarregarEmbeddings();
 
@@ -193,7 +201,6 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, qr, lastDisconnect } = update;
-
     if (qr) {
       console.log(`📲 Escaneie o QR: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     }
@@ -209,98 +216,95 @@ async function startBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-  const msg = messages[0];
-  if (!msg.key.fromMe && msg.message?.conversation) {
-    const pergunta = msg.message.conversation.toLowerCase().trim();
-    const nomeContato = msg.pushName || "visitante";
-    const jid = msg.key.remoteJid;
-    const agora = Date.now();
+    const msg = messages[0];
+    if (!msg.key.fromMe && msg.message?.conversation) {
+      const pergunta = msg.message.conversation.toLowerCase().trim();
+      const nomeContato = msg.pushName || "visitante";
+      const jid = msg.key.remoteJid;
+      const agora = Date.now();
 
-    try {
-      // Listas de gatilhos rápidos
-      const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
-      const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
-      const despedidas = ["tchau", "até mais", "flw", "falou", "até logo", "até breve"];
+      // 🔎 LOG FORMATADO
+    console.log("--------------------------------------------------");
+    console.log(`📩 Nova mensagem recebida!`);
+    console.log(`👤 Contato: ${nomeContato}`);
+    console.log(`💬 Pergunta: ${pergunta}`);
+    console.log("--------------------------------------------------");
+    salvarLog(nomeContato, pergunta);
 
-      // Caso: Saudações curtas
-      if (saudacoes.includes(pergunta)) {
-        const saudacao = `${gerarSaudacao(nomeContato)}\nSou a *IA do CIPT*! Posso te ajudar com dúvidas sobre acesso, reservas de espaços, regras de convivência e tudo mais do nosso regimento interno. Quer saber por onde começar?`;
-        await sock.sendMessage(jid, { text: saudacao });
-        return;
-      }
+      try {        
+        const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
+        const agradecimentos = ["obrigado", "obrigada", "valeu", "thanks", "agradecido"];
+        const despedidas = ["tchau", "até mais", "flw", "falou", "até logo", "até breve"];
 
-      // Caso: Agradecimentos ou despedidas
-      if (agradecimentos.includes(pergunta) || despedidas.includes(pergunta)) {
-        await sock.sendMessage(jid, { 
-          text: `De nada, ${nomeContato}! Foi um prazer ajudar 🤗\nSe precisar novamente, é só me chamar. Até logo!`
-        });
-        // encerra sessão
-        delete usuariosAtivos[jid];
-        if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
-        delete timersEncerramento[jid];
-        return;
-      }
-
-      // Busca trechos relevantes
-      const trechos = await buscarTrechosRelevantes(pergunta);
-
-      let resposta;
-      if (!trechos || trechos.trim().length < 30) {
-        // Fallback somente se não achar conteúdo relevante
-        resposta = "Olha, não encontrei essa informação no regimento interno e nem nas bases que eu uso para te responder. Mas você pode falar direto com a administração pelo e-mail cipt@secti.al.gov.br ou passando na recepção do CIPT, que eles resolvem rapidinho.";
-      } else {
-        const completion = await client.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: ciptPrompt },
-            { role: "user", content: `Pergunta: ${pergunta}\n\nTrechos disponíveis:\n${trechos}` }
-          ],
-          temperature: 0.2,
-          max_tokens: 700
-        });
-        resposta = completion.choices[0].message.content.trim();
-      }
-
-      // Sauda apenas se sessão estava inativa
-      let saudacaoExtra = "";
-      if (!usuariosAtivos[jid] || (agora - usuariosAtivos[jid]) > TEMPO_INATIVIDADE) {
-        saudacaoExtra = `${gerarSaudacao(nomeContato)}\nAqui é o assistente virtual do Centro de Inovação do Jaraguá — pode me chamar de *IA do CIPT*.\n\n`;
-      }
-
-      usuariosAtivos[jid] = agora;
-      usuariosSemResposta[jid] = false;
-
-      // Gera follow-ups dinâmicos
-      const sugestoes = gerarSugestoes();
-      const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
-      await sock.sendMessage(jid, { text: mensagemFinal });
-
-      // Envia contatos específicos
-      if (resposta.toLowerCase().includes("auditório")) {
-        await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-      }
-      if (resposta.toLowerCase().includes("sala de reunião")) {
-        await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
-      }
-
-      // Timer de encerramento por inatividade
-      if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
-      timersEncerramento[jid] = setTimeout(async () => {
-        const tempoPassado = Date.now() - usuariosAtivos[jid];
-        if (tempoPassado >= TEMPO_ENCERRAMENTO) {
-          await sock.sendMessage(jid, { text: "Encerrando seu atendimento por inatividade. Se precisar novamente, é só chamar! 😉" });
-          delete usuariosAtivos[jid];
-          delete timersEncerramento[jid];
+        if (saudacoes.includes(pergunta)) {
+          const saudacao = `${gerarSaudacao(nomeContato)}\nSou a *IA do CIPT*! Posso te ajudar com dúvidas sobre acesso, reservas de espaços, regras de convivência e tudo mais do nosso regimento interno. Quer saber por onde começar?`;
+          await sock.sendMessage(jid, { text: saudacao });
+          return;
         }
-      }, TEMPO_ENCERRAMENTO);
 
-    } catch (err) {
-      console.error('❌ Erro no processamento:', err.message);
-      usuariosSemResposta[jid] = true;
+        if (agradecimentos.includes(pergunta) || despedidas.includes(pergunta)) {
+          await sock.sendMessage(jid, { 
+            text: `De nada, ${nomeContato}! Foi um prazer ajudar 🤗\nSe precisar novamente, é só me chamar. Até logo!`
+          });
+          delete usuariosAtivos[jid];
+          if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+          delete timersEncerramento[jid];
+          return;
+        }
+
+        const trechos = await buscarTrechosRelevantes(pergunta);
+        let resposta;
+
+        if (!trechos || trechos.trim().length < 30) {
+          resposta = "Olha, não encontrei essa informação no regimento interno e nem nas bases que eu uso para te responder. Mas você pode falar direto com a administração pelo e-mail supcti@secti.al.gov.br ou passando na recepção do CIPT, que eles resolvem rapidinho.";
+        } else {
+          const completion = await client.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: `${ciptPrompt}\n⚠️ Importante: não misture informações de seções diferentes (ex.: auditório vs salas de reunião). Responda apenas com base nos trechos mais coerentes.` },
+              { role: "user", content: `Pergunta: ${pergunta}\n\nTrechos disponíveis:\n${trechos}` }
+            ],
+            temperature: 0.2,
+            max_tokens: 700
+          });
+          resposta = completion.choices[0].message.content.trim();
+        }
+
+        let saudacaoExtra = "";
+        if (!usuariosAtivos[jid] || (agora - usuariosAtivos[jid]) > TEMPO_INATIVIDADE) {
+          saudacaoExtra = `${gerarSaudacao(nomeContato)}\nAqui é o assistente virtual do Centro de Inovação do Jaraguá — pode me chamar de *IA do CIPT*.\n\n`;
+        }
+
+        usuariosAtivos[jid] = agora;
+        usuariosSemResposta[jid] = false;
+
+        const sugestoes = gerarSugestoes();
+        const mensagemFinal = `${saudacaoExtra}${resposta}\n\n${sugestoes}`;
+        await sock.sendMessage(jid, { text: mensagemFinal });
+
+        if (resposta.toLowerCase().includes("auditório")) {
+          await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
+        }
+        if (resposta.toLowerCase().includes("sala de reunião")) {
+          await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+        }
+
+        if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+        timersEncerramento[jid] = setTimeout(async () => {
+          const tempoPassado = Date.now() - usuariosAtivos[jid];
+          if (tempoPassado >= TEMPO_ENCERRAMENTO) {
+            await sock.sendMessage(jid, { text: "Encerrando seu atendimento por inatividade. Se precisar novamente, é só chamar! 😉" });
+            delete usuariosAtivos[jid];
+            delete timersEncerramento[jid];
+          }
+        }, TEMPO_ENCERRAMENTO);
+
+      } catch (err) {
+        console.error('❌ Erro no processamento:', err.message);
+        usuariosSemResposta[jid] = true;
+      }
     }
-  }
-});
-
+  });
 
   // Checagem periódica
   setInterval(async () => {
