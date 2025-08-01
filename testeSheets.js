@@ -9,6 +9,8 @@ async function teste() {
       Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64").toString("utf8")
     );
 
+    console.log("📌 GOOGLE_CREDENTIALS_BASE64 OK?", !!process.env.GOOGLE_CREDENTIALS_BASE64);
+    
     // Cria o cliente de autenticação
     const auth = new google.auth.GoogleAuth({
       credentials,
