@@ -502,14 +502,13 @@ if (!contatosEnviados[jid]) {
             delete historicoUsuarios[jid];
             delete contatosEnviados[jid];
           }
-        }, TEMPO_ENCERRAMENTO);
-
-      } catch (err) {
-        console.error('❌ Erro no processamento:', err.message);
-        usuariosSemResposta[jid] = true;
-      }
-    }
-  });
+ }, TEMPO_ENCERRAMENTO);
+  } catch (err) {
+    console.error('❌ Erro no processamento:', err.message);
+    usuariosSemResposta[jid] = true;
+  }
+}
+});
 
   setInterval(async () => {
     for (let jid in usuariosSemResposta) {
