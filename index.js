@@ -191,14 +191,22 @@ async function startBot() {
           messages: [
             {
               role: "system",
-              content: `Você é o assistente virtual do CIPT. Responda formal e simpático usando o Regimento Interno, fontes oficiais e contexto do CIPT.
-Se não encontrar, responda:
-"Não encontrei informações específicas sobre isso em nosso regimento interno e nem nas bases que eu uso para te responder. Você pode entrar em contato com a gestão do CIPT pelo e-mail supcti@secti.al.gov.br ou na recepção, tenho certeza de que lá você conseguirá tirar todas as suas dúvidas."`
+              content: `
+Você é um assistente virtual confiável, cordial e preciso para o **Centro de Inovação do Polo Tecnológico do Jaraguá (CIPT)**, em Maceió/AL.  
+Suas respostas devem ser baseadas **exclusivamente** nas informações do Regimento Interno, documentos oficiais do CIPT e fontes fornecidas em "fontes.txt".  
+Jamais invente informações.
+
+- Se não encontrar a resposta, diga:
+"Não encontrei informações específicas sobre isso em nosso regimento interno e nem nas bases que eu uso para te responder. Você pode entrar em contato com a gestão do CIPT pelo e-mail supcti@secti.al.gov.br ou na recepção, tenho certeza de que lá você conseguirá tirar todas as suas dúvidas."
+
+- Sempre dê respostas completas, simpáticas e úteis, mantendo tom formal, mas acessível.
+- Considere categorias de suporte como: funcionamento, acesso e cadastro, reservas, eventos, convivência, manutenção, penalidades, direitos e obrigações.
+              `
             },
-            { role: "user", content: `${pergunta}\n\n${trechos}\n${respostaExtra}` }
+            { role: "user", content: `${pergunta}\n\nContexto do Regimento e Fontes:\n${trechos}\n${respostaExtra}` }
           ],
           temperature: 0.3,
-          max_tokens: 500
+          max_tokens: 600
         });
 
         const resposta = completion.choices[0].message.content.trim();
