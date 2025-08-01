@@ -375,32 +375,31 @@ async function startBot() {
     // Captura respostas numéricas no grupo de suporte
 if (jid === GRUPO_SUPORTE_JID) {
   console.log("Mensagem no grupo de suporte:", JSON.stringify(msg.message, null, 2));
-let textoTrim = (
-  msg.message?.conversation || 
-  msg.message?.extendedTextMessage?.text || 
-  msg.message?.imageMessage?.caption || 
-  ""
-).trim();
+  let textoTrim = (
+    msg.message?.conversation || 
+    msg.message?.extendedTextMessage?.text || 
+    msg.message?.imageMessage?.caption || 
+    ""
+  ).trim();
 
-// Remove @bot do início, se existir
-if (textoTrim.toLowerCase().startsWith("@bot")) {
-  textoTrim = textoTrim.slice(4).trim(); // remove '@bot' e espaço
-}
+  // Remove @bot do início, se existir
+  if (textoTrim.toLowerCase().startsWith("@bot")) {
+    textoTrim = textoTrim.slice(4).trim();
+  }
 
-const partes = textoTrim.split(/\s+/);
+  const partes = textoTrim.split(/\s+/);
 
   if (partes.length === 2) {
-    const protocolo = partes[0].toUpperCase(); // Exemplo: CH-12345
-    const statusCodigo = partes[1]; // Exemplo: "1", "2", "3"
+    const protocolo = partes[0].toUpperCase();
+    const statusCodigo = partes[1];
 
-    // Validação do status
     const statusMap = {
       "1": "Em Atendimento",
       "2": "Concluído",
       "3": "Rejeitado"
     };
 
-    const status = statusMap[statusCodigo];
+    const status = statusMap[statusCodigo];  // Definido aqui!
 
     if (!status) {
       await sock.sendMessage(GRUPO_SUPORTE_JID, {
@@ -409,7 +408,6 @@ const partes = textoTrim.split(/\s+/);
       return;
     }
 
-    // Verifica se o protocolo existe no objeto local
     if (!chamadosAtivos[protocolo]) {
       await sock.sendMessage(GRUPO_SUPORTE_JID, {
         text: `❌ Protocolo ${protocolo} não encontrado ou já finalizado.`
@@ -417,42 +415,38 @@ const partes = textoTrim.split(/\s+/);
       return;
     }
 
-    // Quem respondeu no grupo será o responsável pela atualização
     const responsavel = msg.pushName || "Equipe Suporte";
 
-    // Atualiza o status no Google Sheets ou sistema externo, passando o responsável
     const usuarioJid = await atualizarStatusChamado(protocolo, status, responsavel);
 
-    // Atualiza a memória local para acompanhar o responsável e status atuais
     chamadosAtivos[protocolo].responsavel = responsavel;
     chamadosAtivos[protocolo].status = status;
 
-    // Envia mensagem ao grupo confirmando a atualização
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { 
-      text: `📌 Chamado ${protocolo} atualizado para *${status}* por ${responsavel}.` 
-    });
+    // Após atualizar o status e antes de enviar a mensagem para o grupo:
+    const textoNegrito = `📌 Chamado ${protocolo} atualizado para *${status}* por ${responsavel}.`;
 
-    // Notifica o usuário que abriu o chamado, se possível
+    // Tenta enviar com markdown, se der erro, envia texto simples
+    try {
+      await sock.sendMessage(GRUPO_SUPORTE_JID, { text: textoNegrito });
+    } catch (e) {
+      console.log('Erro ao enviar com markdown, enviando texto simples:', e.message);
+      await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `📌 Chamado ${protocolo} atualizado para ${status} por ${responsavel}.` });
+    }
     if (usuarioJid) {
       await sock.sendMessage(usuarioJid, { 
         text: `📌 Seu chamado ${protocolo} foi atualizado para *${status}*.` 
       });
     }
 
-    // Remove da lista local se status for finalizado (não "Em Atendimento")
     if (status !== "Em Atendimento") {
       delete chamadosAtivos[protocolo];
     }
   } else {
-    // Se não for formato protocolo + status, pode enviar uma mensagem explicativa
     await sock.sendMessage(GRUPO_SUPORTE_JID, {
       text: `⚠️ Formato inválido. Use:\nCH-XXXXX [1|2|3]\nExemplo: CH-12345 2`
     });
   }
 }
-
-
-
       // O bloco 'try...catch' agora engloba a lógica principal do bot
       try {
         const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
