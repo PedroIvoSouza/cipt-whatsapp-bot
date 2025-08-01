@@ -81,10 +81,35 @@ async function gerarOuCarregarEmbeddings() {
 
 // Buscar trechos relevantes
 async function buscarTrechosRelevantes(pergunta) {
-  const perguntaEmbedding = await client.embeddings.create({
-    model: "text-embedding-3-small",
-    input: pergunta
-  });
+  try {
+    const perguntaEmbedding = await client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: pergunta
+    });
+
+    const perguntaVector = perguntaEmbedding.data[0].embedding;
+
+    const resultados = embeddingsCache.map(e => {
+      const dot = perguntaVector.reduce((acc, val, idx) => acc + val * e.vector[idx], 0);
+      const magA = Math.sqrt(perguntaVector.reduce((acc, val) => acc + val * val, 0));
+      const magB = Math.sqrt(e.vector.reduce((acc, val) => acc + val * val, 0));
+      const score = dot / (magA * magB);
+      return { trecho: e.trecho, score };
+    });
+
+    resultados.sort((a, b) => b.score - a.score);
+    const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
+    const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados)
+      .slice(0, 8).map(r => r.trecho);
+
+    console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
+    return selecionados.join("\n\n");
+
+  } catch (err) {
+    console.error("❌ Erro ao buscar trechos relevantes:", err.message);
+    return "";
+  }
+}
 
 // Classifica se a mensagem é chamado e sugere categoria
 async function classificarChamado(pergunta) {
@@ -128,25 +153,7 @@ async function classificarChamado(pergunta) {
     return { ehChamado: "NAO", categoria: "N/A" };
   }
 }
-  
-  const perguntaVector = perguntaEmbedding.data[0].embedding;
 
-  const resultados = embeddingsCache.map(e => {
-    const dot = perguntaVector.reduce((acc, val, idx) => acc + val * e.vector[idx], 0);
-    const magA = Math.sqrt(perguntaVector.reduce((acc, val) => acc + val * val, 0));
-    const magB = Math.sqrt(e.vector.reduce((acc, val) => acc + val * val, 0));
-    const score = dot / (magA * magB);
-    return { trecho: e.trecho, score };
-  });
-
-  resultados.sort((a, b) => b.score - a.score);
-  const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
-  const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados)
-    .slice(0, 8).map(r => r.trecho);
-
-  console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
-  return selecionados.join("\n\n");
-}
 
 // Detecta follow-up
 function ehFollowUp(pergunta) {
@@ -420,9 +427,6 @@ if (buttonId.startsWith("atendimento_")) {
     }
   }
 }
-
-
-
           if (pergunta === "não") {
             await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
             delete usuariosAtivos[jid].chamadoPendente;
