@@ -3,15 +3,12 @@ const { google } = require("googleapis");
 async function teste() {
   try {
     const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-    
-    // Decodifica o JSON que está em Base64
+
+    // Decodifica as credenciais em Base64
     const credentials = JSON.parse(
       Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64").toString("utf8")
     );
 
-    console.log("📌 GOOGLE_CREDENTIALS_BASE64 OK?", !!process.env.GOOGLE_CREDENTIALS_BASE64);
-    
-    // Cria o cliente de autenticação
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: SCOPES,
@@ -40,4 +37,4 @@ async function teste() {
   }
 }
 
-teste();    
+teste();
