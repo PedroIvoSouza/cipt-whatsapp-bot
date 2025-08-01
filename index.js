@@ -501,9 +501,9 @@ if (!contatosEnviados[jid]) {
             delete historicoUsuarios[jid];
             delete contatosEnviados[jid];
           }
-        }, TEMPO_ENCERRAMENTO); // ✅ fecha apenas o setTimeout aqui
+        }        }, TEMPO_ENCERRAMENTO); // fecha apenas o setTimeout aqui
 
-      } catch (err) { // ✅ agora o catch está no nível certo do try
+      } catch (err) { 
         console.error('❌ Erro no processamento:', err.message);
         usuariosSemResposta[jid] = true;
       }
