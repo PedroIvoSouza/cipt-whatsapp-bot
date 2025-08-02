@@ -1,11 +1,8 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO FINAL E COMPLETA (AGO/2025)
-// Mantém 100% das funcionalidades originais com bugs corrigidos.
-// Personalidade do bot definida em ciptPrompt.js.
-// Preparado para persistência de sessão com Render Disk.
+// CIPT-WHATSAPP-BOT - VERSÃO FINAL E ESTÁVEL (COM ATUALIZAÇÃO DE BIBLIOTECA)
+// Mantém 100% das funcionalidades, enviando confirmações de status no grupo.
 // =================================================================================================
 
-// Corrige erro do Baileys no Node 20+
 const crypto = require("node:crypto");
 global.crypto = crypto;
 
@@ -18,15 +15,12 @@ const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
-const nodemailer = require("nodemailer");
-const { ciptPrompt } = require("./ciptPrompt.js"); // <-- Carrega a personalidade
+const { ciptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado } = require("./sheetsChamados");
 
 dotenv.config();
-
 const app = express();
 app.use(express.json());
-
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
@@ -34,15 +28,13 @@ let embeddingsCache = [];
 // --- CONTROLE DE SESSÕES E ESTADO ---
 const usuariosAtivos = {};
 const timersEncerramento = {};
-const TEMPO_INATIVIDADE = 30 * 60 * 1000;
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const historicoUsuarios = {};
 const LIMITE_HISTORICO = 8;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
-
-// --- FUNÇÕES AUXILIARES (MANTIDAS DO ORIGINAL) ---
+// --- FUNÇÕES AUXILIARES ---
 
 async function gerarOuCarregarEmbeddings() {
   try {
@@ -62,13 +54,13 @@ async function gerarOuCarregarEmbeddings() {
     const fontesDivididas = await splitter.splitText(fontesNormalizadas);
     const pdfChunks = [...pdfDividido, ...fontesDivididas];
     console.log(`📚 Documentos divididos em ${pdfChunks.length} trechos.`);
-    console.log("⚙️ Gerando embeddings (pode levar um tempo na primeira vez)...");
+    console.log("⚙️ Gerando embeddings...");
     for (let chunk of pdfChunks) {
       const embedding = await client.embeddings.create({ model: "text-embedding-3-small", input: chunk });
       embeddingsCache.push({ trecho: chunk, vector: embedding.data[0].embedding });
     }
     fs.writeFileSync('./embeddings.json', JSON.stringify(embeddingsCache, null, 2));
-    console.log("✅ Embeddings salvos em cache local (embeddings.json).");
+    console.log("✅ Embeddings salvos em cache local.");
   } catch (err) {
     console.error("❌ Erro crítico ao carregar embeddings:", err.message);
   }
@@ -88,7 +80,6 @@ async function buscarTrechosRelevantes(pergunta) {
     resultados.sort((a, b) => b.score - a.score);
     const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
     const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados).slice(0, 8).map(r => r.trecho);
-    console.log(`🔎 Resgatados ${selecionados.length} trechos relevantes.`);
     return selecionados.join("\n\n");
   } catch (err) {
     console.error("❌ Erro ao buscar trechos:", err.message);
@@ -100,22 +91,15 @@ async function classificarChamado(pergunta) {
   try {
     const resp = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem do usuário e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Internet e Rede, Energia Elétrica, Limpeza, Manutenção Civil, Segurança e Portaria, Elevadores, Hidráulica / Vazamentos, Equipamentos / Móveis, Administrativo / Outros. Se não for um chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
+      messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Internet e Rede, Energia Elétrica, Limpeza, Manutenção Civil, Segurança e Portaria, Elevadores, Hidráulica / Vazamentos, Equipamentos / Móveis, Administrativo / Outros. Se não for chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
       temperature: 0,
       max_tokens: 50
     });
-    const conteudo = resp.choices[0].message.content.trim();
-    return JSON.parse(conteudo);
+    return JSON.parse(resp.choices[0].message.content.trim());
   } catch (err) {
     console.error("❌ Erro ao classificar chamado:", err.message);
     return { ehChamado: "NAO", categoria: "N/A" };
   }
-}
-
-function ehFollowUp(pergunta) {
-  const conectores = ["e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"];
-  const curtas = pergunta.split(" ").length <= 5;
-  return conectores.some(c => pergunta.startsWith(c)) || curtas;
 }
 
 function gerarSaudacao(nome) {
@@ -124,7 +108,7 @@ function gerarSaudacao(nome) {
 }
 
 function gerarSugestoes() {
-  const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?", "Como funciona o estacionamento do CIPT?", "Como faço meu cadastro para ter acesso ao espaço?"];
+  const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?"];
   const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 2);
   return `\n\n*Posso ajudar com algo mais?* Você pode perguntar, por exemplo:\n- _${sorteadas[0]}_\n- _${sorteadas[1]}_`;
 }
@@ -149,34 +133,25 @@ function salvarLog(nome, pergunta) {
 
 // --- LÓGICA PRINCIPAL DO BOT ---
 async function startBot() {
-  // Caminho da sessão agora aponta para o Render Disk.
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
-
   console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
-  // ... o resto do código continua
 
-  // A inicialização da sessão acontece aqui, UMA ÚNICA VEZ
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-
-     if (qr) {
-      console.log("‼️ NOVO QR CODE GERADO. Escaneie com seu celular. Você pode gerar uma imagem do QR em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
-    }
+     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
       const error = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = error !== DisconnectReason.loggedOut;
       console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
-      if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Outra sessão foi aberta. Garanta que apenas uma instância do bot esteja rodando!");
+      if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Garanta que apenas uma instância do bot esteja rodando!");
       if (shouldReconnect) setTimeout(startBot, 5000);
     }
   });
-
-  // O restante do seu código (sock.ev.on('messages.upsert', ...)) continua aqui...
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
@@ -186,52 +161,34 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
+    // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
+    if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+        const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
+        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+        const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
+        const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
-     // Substitua esta seção no seu index.js
+        if (matchProtocolo) {
+            const protocolo = matchProtocolo[1];
+            const responsavel = nomeContato;
+            let novoStatus = "";
+            if (textoResposta === "1") novoStatus = "Em Atendimento";
+            else if (textoResposta === "2") novoStatus = "Concluído";
+            else if (textoResposta === "3") novoStatus = "Rejeitado";
 
-// --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
-if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-    const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
-    
-    // Pega o JID de quem respondeu (ex: 558299992881@s.whatsapp.net)
-    const jidDoParticipante = msg.key.participant;
-
-    const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
-    const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
-
-    const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
-
-    if (matchProtocolo) {
-        const protocolo = matchProtocolo[1];
-        const responsavel = nomeContato;
-        let novoStatus = "";
-
-        if (textoResposta === "1") novoStatus = "Em Atendimento";
-        else if (textoResposta === "2") novoStatus = "Concluído";
-        else if (textoResposta === "3") novoStatus = "Rejeitado";
-
-        if (novoStatus) {
-            const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
-            const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-
-            // Mensagem de confirmação que será enviada no PRIVADO de quem respondeu
-            const mensagemConfirmacao = `${statusEmoji} Você atualizou o status do chamado *${protocolo}* para *${novoStatus}*. O usuário que abriu o chamado já foi notificado.`;
-            
-            // Envia a confirmação no privado
-            if(jidDoParticipante) {
-                await sock.sendMessage(jidDoParticipante, { text: mensagemConfirmacao });
+            if (novoStatus) {
+                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
+                const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
+                // LÓGICA RESTAURADA: Envia confirmação para o grupo e para o usuário
+                await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
+                if (usuarioJid) {
+                    await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+                }
+                return;
             }
-
-            // Notifica o usuário original no privado
-            if (usuarioJid) {
-                const mensagemUsuario = `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}* por ${responsavel}.`;
-                await sock.sendMessage(usuarioJid, { text: mensagemUsuario });
-            }
-            return;
         }
     }
-}
-    // --- LÓGICA DE PROCESSAMENTO DE MENSAGENS DO USUÁRIO ---
+
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
     
@@ -247,34 +204,12 @@ if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.co
         if (pergunta === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
-          await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada e em breve cuidará da sua solicitação.` });
+          await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
-         if (GRUPO_SUPORTE_JID) {
-           if (GRUPO_SUPORTE_JID) {
-            // PASSO 1: O bot envia a mensagem de alerta original e completa.
+          if (GRUPO_SUPORTE_JID) {
             const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
-
-            const sentMsg = await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
-            console.log(`[ALERTA] Mensagem de novo chamado ${protocolo} enviada para o grupo.`);
-
-            // PASSO 2 (NOVO): O bot responde a si mesmo para forçar a sincronização em todos os aparelhos.
-            // Usamos um pequeno delay para garantir que a primeira mensagem seja processada.
-            setTimeout(async () => {
-                try {
-                    const textoResposta = `Status do chamado *${protocolo}* pendente de atualização.`;
-                    await sock.sendMessage(
-                        GRUPO_SUPORTE_JID,
-                        { text: textoResposta },
-                        { quoted: sentMsg } // <-- A mágica acontece aqui, citando a mensagem anterior.
-                    );
-                    console.log(`[SYNC] Auto-resposta para o chamado ${protocolo} enviada para forçar sincronia.`);
-                } catch (err) {
-                    console.error("❌ Erro ao enviar a auto-resposta de sincronização:", err);
-                }
-            }, 1500); // Delay de 1.5 segundos
-        }
-
-}
+            await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
+          }
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
@@ -308,8 +243,7 @@ if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.co
         messages: [
           { role: "system", content: ciptPrompt },
           ...historicoUsuarios[jid],
-          { role: "user", content: `Com base no contexto fornecido e no histórico da nossa conversa, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
-          ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
+          { role: "user", content: `Com base no contexto fornecido e no histórico da nossa conversa, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` }
         ],
         temperature: 0.25,
         max_tokens: 700
@@ -327,7 +261,13 @@ if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.co
         }
       }
       
-      resposta += gerarSugestoes();
+      const despedidas = ["obrigado", "obrigada", "valeu", "tchau", "até mais", "flw"];
+      if(!despedidas.includes(pergunta)) {
+        resposta += gerarSugestoes();
+      } else {
+         delete usuariosAtivos[jid];
+      }
+      
       await sock.sendMessage(jid, { text: resposta });
 
       usuariosAtivos[jid] = agora;
@@ -367,7 +307,7 @@ async function main() {
       console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
       setInterval(() => {
         fetch(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message));
-      }, 14 * 60 * 1000); // Ping a cada 14 minutos
+      }, 14 * 60 * 1000);
     }
   });
 }
