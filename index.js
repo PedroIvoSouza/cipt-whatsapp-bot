@@ -245,16 +245,25 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada e em breve cuidará da sua solicitação.` });
           
          if (GRUPO_SUPORTE_JID) {
+           // --- INÍCIO DO TESTE DE MENSAGEM ---
+    
+            // Deixe a sua mensagem original comentada por enquanto
             /*
-            // DEIXE A MENSAGEM ORIGINAL COMENTADA POR ENQUANTO
-            const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
+            const menuTextoOriginal = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
             */
 
-            // ✅ USE ESTA VERSÃO SIMPLES PARA O TESTE
-            const menuTexto = `Novo chamado aberto para teste. Protocolo: ${protocolo}. Responda com 1, 2 ou 3.`;
-
+            // Teste 1: A mensagem mais simples possível. Sem formatação, sem emojis, sem quebra de linha.
+            const menuTexto = `Novo chamado para teste de sincronia. Protocolo: ${protocolo}. Por favor, responda a esta mensagem com 1, 2 ou 3.`;
+            
+            // Se o Teste 1 funcionar, o problema é a formatação. Depois podemos tentar reintroduzir elementos um a um.
+            // Ex: Teste 2 (com quebra de linha): const menuTexto = `Novo chamado para teste.\nProtocolo: ${protocolo}`;
+            // Ex: Teste 3 (com negrito): const menuTexto = `*Novo chamado para teste.*\nProtocolo: ${protocolo}`;
+            
+            console.log(`[TESTE DE SINCRONIA] Enviando mensagem simples para o grupo: "${menuTexto}"`);
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
-          }
+            
+            // --- FIM DO TESTE DE MENSAGEM ---
+}
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
