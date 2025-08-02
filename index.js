@@ -220,10 +220,22 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
           if (GRUPO_SUPORTE_JID) {
-            // VOLTANDO PARA A MENSAGEM ENXUTA QUE FUNCIONAVA
-            const menuTexto = `Novo chamado aberto. Protocolo: ${protocolo}. Responda com 1, 2 ou 3.`;
+            // ✅ VERSÃO NOVA: MAIS INFORMATIVA E AINDA SEGURA
+            const menuTexto = `Novo chamado aberto.
+
+Protocolo: ${protocolo}
+Usuário: ${nomeContato}
+Descrição: ${chamadoPendente.descricao}
+
+Responda a esta mensagem com uma das opções:
+1 - Em Atendimento
+2 - Concluído
+3 - Rejeitado`;
+
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
           }
+          // A chave extra que estava aqui foi removida.
+
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
@@ -232,7 +244,6 @@ async function startBot() {
           return;
         }
       }
-
       const classificacao = await classificarChamado(pergunta);
       if (classificacao.ehChamado === "SIM") {
         usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } };
