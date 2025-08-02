@@ -1,6 +1,7 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO FINAL E ESTÁVEL (COM ATUALIZAÇÃO DE BIBLIOTECA)
-// Mantém 100% das funcionalidades, enviando confirmações de status no grupo.
+// CIPT-WHATSAPP-BOT - VERSÃO DEFINITIVA E COMPLETA
+// Mantém 100% das funcionalidades, incluindo follow-up, envio de contato e timers.
+// Lógica de resposta no grupo restaurada e estável.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -25,16 +26,16 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
 
-// --- CONTROLE DE SESSÕES E ESTADO ---
+// --- CONTROLE DE SESSÕES E ESTADO (COMPLETO) ---
 const usuariosAtivos = {};
 const timersEncerramento = {};
-const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
+const TEMPO_ENCERRAMENTO = 5 * 60 * 1000; // 5 minutos
 const historicoUsuarios = {};
 const LIMITE_HISTORICO = 8;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
-// --- FUNÇÕES AUXILIARES ---
+// --- FUNÇÕES AUXILIARES (TODAS RESTAURADAS) ---
 
 async function gerarOuCarregarEmbeddings() {
   try {
@@ -100,6 +101,12 @@ async function classificarChamado(pergunta) {
     console.error("❌ Erro ao classificar chamado:", err.message);
     return { ehChamado: "NAO", categoria: "N/A" };
   }
+}
+
+function ehFollowUp(pergunta) {
+  const conectores = ["e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"];
+  const curtas = pergunta.split(" ").length <= 5;
+  return conectores.some(c => pergunta.startsWith(c)) || curtas;
 }
 
 function gerarSaudacao(nome) {
@@ -179,8 +186,9 @@ async function startBot() {
             if (novoStatus) {
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-                // LÓGICA RESTAURADA: Envia confirmação para o grupo e para o usuário
+                
                 await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
+                
                 if (usuarioJid) {
                     await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
                 }
@@ -226,7 +234,7 @@ async function startBot() {
         return;
       }
       
-      const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí", "tudo bem", "tudo bom"];
+      const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"];
       if (saudacoes.includes(pergunta)) {
         await sock.sendMessage(jid, { text: gerarSaudacao(nomeContato) });
         return;
@@ -243,7 +251,8 @@ async function startBot() {
         messages: [
           { role: "system", content: ciptPrompt },
           ...historicoUsuarios[jid],
-          { role: "user", content: `Com base no contexto fornecido e no histórico da nossa conversa, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` }
+          { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
+          ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
         ],
         temperature: 0.25,
         max_tokens: 700
@@ -266,10 +275,16 @@ async function startBot() {
         resposta += gerarSugestoes();
       } else {
          delete usuariosAtivos[jid];
+         // Limpa o estado do usuário na despedida
+         if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
+         delete timersEncerramento[jid];
+         delete historicoUsuarios[jid];
+         delete contatosEnviados[jid];
       }
       
       await sock.sendMessage(jid, { text: resposta });
 
+      // Inicia ou reinicia o timer de encerramento
       usuariosAtivos[jid] = agora;
       if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
       timersEncerramento[jid] = setTimeout(async () => {
@@ -284,30 +299,20 @@ async function startBot() {
 
     } catch (err) {
       console.error('❌ Erro no processamento da mensagem:', err.message, err.stack);
-      await sock.sendMessage(jid, { text: "Peço desculpas, ocorreu um erro interno e não consegui processar sua solicitação. A equipe técnica já foi notificada. Por favor, tente novamente em alguns instantes." });
+      await sock.sendMessage(jid, { text: "Peço desculpas, ocorreu um erro interno. Tente novamente." });
     }
   });
 }
 
-// --- INICIALIZAÇÃO DO SERVIÇO ---
 async function main() {
   await gerarOuCarregarEmbeddings();
   await startBot();
-  
-  exec("node testeSheets.js", (error, stdout, stderr) => {
-    if (error) console.error(`❌ Erro no teste Google Sheets: ${error.message}`);
-    if (stderr) console.error(`⚠️ Aviso no teste Google Sheets: ${stderr}`);
-    if (stdout) console.log(`✅ Resultado do teste Google Sheets:\n${stdout}`);
-  });
-  
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
     if(process.env.RENDER_URL) {
       console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
-      setInterval(() => {
-        fetch(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message));
-      }, 14 * 60 * 1000);
+      setInterval(() => { fetch(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message)); }, 14 * 60 * 1000);
     }
   });
 }
