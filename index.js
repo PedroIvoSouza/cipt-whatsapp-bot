@@ -153,6 +153,7 @@ async function startBot() {
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 
   console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
+  // ... o resto do código continua
 
   // A inicialização da sessão acontece aqui, UMA ÚNICA VEZ
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
@@ -161,6 +162,7 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
+
      if (qr) {
       console.log("‼️ NOVO QR CODE GERADO. Escaneie com seu celular. Você pode gerar uma imagem do QR em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     }
