@@ -151,7 +151,7 @@ function salvarLog(nome, pergunta) {
 async function startBot() {
   // Caminho da sessão agora aponta para o Render Disk.
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
-  
+
   console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
 
   // A inicialização da sessão acontece aqui, UMA ÚNICA VEZ
@@ -184,10 +184,25 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
-    // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
+    // =========================================================================
+    // ✅ "DEDO-DURO" ATIVADO PARA DIAGNÓSTICO
+    // =========================================================================
+    if (isGroup && jid === GRUPO_SUPORTE_JID) {
+        console.log("================= DEBUG GRUPO SUPORTE =================");
+        console.log(JSON.stringify(msg, null, 2));
+        console.log("==========================================================");
+    }
+    // =========================================================================
+
+
+     // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
-        const textoMensagemOriginal = msg.message.extendedTextMessage.contextInfo.quotedMessage.conversation || "";
+        
+        // CORREÇÃO: Lógica mais robusta para ler o texto da mensagem original
+        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+        const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
+
         const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
         if (matchProtocolo) {
@@ -227,8 +242,15 @@ async function startBot() {
           await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada e em breve cuidará da sua solicitação.` });
           
-          if (GRUPO_SUPORTE_JID) {
+         if (GRUPO_SUPORTE_JID) {
+            /*
+            // DEIXE A MENSAGEM ORIGINAL COMENTADA POR ENQUANTO
             const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
+            */
+
+            // ✅ USE ESTA VERSÃO SIMPLES PARA O TESTE
+            const menuTexto = `Novo chamado aberto para teste. Protocolo: ${protocolo}. Responda com 1, 2 ou 3.`;
+
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
           }
           delete usuariosAtivos[jid].chamadoPendente;
