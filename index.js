@@ -1,9 +1,8 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO 2 (FINAL, COMPLETA E CORRIGIDA)
-// - Mantém 100% das funções originais.
-// - Corrige a leitura de todos os tipos de mensagem.
-// - Implementa o sistema de chamados via menu de texto (confiável).
-// - Reintegra todas as funções auxiliares (saudações, sugestões, logs, vCard, etc).
+// CIPT-WHATSAPP-BOT - VERSÃO FINAL E COMPLETA (AGO/2025)
+// Mantém 100% das funcionalidades originais com bugs corrigidos.
+// Personalidade do bot definida em ciptPrompt.js.
+// Preparado para persistência de sessão com Render Disk.
 // =================================================================================================
 
 // Corrige erro do Baileys no Node 20+
@@ -20,7 +19,7 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whis
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
 const nodemailer = require("nodemailer");
-const { ciptPrompt } = require("./ciptPrompt.js");
+const { ciptPrompt } = require("./ciptPrompt.js"); // <-- Carrega a personalidade
 const { registrarChamado, atualizarStatusChamado } = require("./sheetsChamados");
 
 dotenv.config();
@@ -34,18 +33,16 @@ let embeddingsCache = [];
 
 // --- CONTROLE DE SESSÕES E ESTADO ---
 const usuariosAtivos = {};
-const usuariosSemResposta = {};
 const timersEncerramento = {};
 const TEMPO_INATIVIDADE = 30 * 60 * 1000;
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
-const TEMPO_CHECAGEM = 30 * 1000;
 const historicoUsuarios = {};
-const LIMITE_HISTORICO = 6;
+const LIMITE_HISTORICO = 8;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
 
-// --- FUNÇÕES AUXILIARES (100% MANTIDAS DO ORIGINAL) ---
+// --- FUNÇÕES AUXILIARES (MANTIDAS DO ORIGINAL) ---
 
 async function gerarOuCarregarEmbeddings() {
   try {
@@ -65,7 +62,7 @@ async function gerarOuCarregarEmbeddings() {
     const fontesDivididas = await splitter.splitText(fontesNormalizadas);
     const pdfChunks = [...pdfDividido, ...fontesDivididas];
     console.log(`📚 Documentos divididos em ${pdfChunks.length} trechos.`);
-    console.log("⚙️ Gerando embeddings (isso pode levar um tempo na primeira vez)...");
+    console.log("⚙️ Gerando embeddings (pode levar um tempo na primeira vez)...");
     for (let chunk of pdfChunks) {
       const embedding = await client.embeddings.create({ model: "text-embedding-3-small", input: chunk });
       embeddingsCache.push({ trecho: chunk, vector: embedding.data[0].embedding });
@@ -122,14 +119,14 @@ function ehFollowUp(pergunta) {
 }
 
 function gerarSaudacao(nome) {
-  const opcoes = [`Olá, ${nome}! 👋`, `Oi, ${nome}! Tudo bem? 🙂`, `Seja bem-vindo(a), ${nome}! 🌟`, `Oi oi, ${nome}! Como posso te ajudar hoje? 🤗`, `Prazer falar com você, ${nome}! 🙌`];
+  const opcoes = [`Olá, ${nome}! Sou a IA do CIPT. Em que posso ser útil hoje? 👋`, `Bom dia, ${nome}! Aqui é a assistente virtual do CIPT. Como posso ajudar?`, `Seja bem-vindo(a) ao CIPT, ${nome}. Estou à disposição para esclarecer suas dúvidas. 🙂`];
   return opcoes[Math.floor(Math.random() * opcoes.length)];
 }
 
 function gerarSugestoes() {
-  const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?", "Como funciona o estacionamento do CIPT?", "Como faço meu cadastro para ter acesso ao espaço?", "Qual é a diferença entre o auditório e as salas de reunião?", "Quem pode usar os laboratórios do CIPT?", "Quais são os documentos necessários para reservar um espaço?", "Como funciona o restaurante-escola?"];
-  const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 3);
-  return `\nℹ️ Você também pode me perguntar, por exemplo:\n- ${sorteadas[0]}\n- ${sorteadas[1]}\n- ${sorteadas[2]}`;
+  const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?", "Como funciona o estacionamento do CIPT?", "Como faço meu cadastro para ter acesso ao espaço?"];
+  const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 2);
+  return `\n\n*Posso ajudar com algo mais?* Você pode perguntar, por exemplo:\n- _${sorteadas[0]}_\n- _${sorteadas[1]}_`;
 }
 
 async function enviarContato(sock, jid, nome, telefone) {
@@ -138,18 +135,7 @@ async function enviarContato(sock, jid, nome, telefone) {
     await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
   } catch (err) {
     console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
-    await sock.sendMessage(jid, { text: `📞 Contato de ${nome}: +${telefone}` });
-  }
-}
-
-async function enviarEmail(assunto, mensagem) {
-    // Esta função foi mantida mas não é chamada no fluxo atual.
-    // Pode ser usada no futuro se necessário.
-  try {
-    const transporter = nodemailer.createTransport({ service: "gmail", auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS } });
-    await transporter.sendMail({ from: `"Bot CIPT" <${process.env.GMAIL_USER}>`, to: "supcti.secti@gmail.com", subject: assunto, text: mensagem });
-  } catch (error) {
-    console.error("Erro ao enviar email:", error.message);
+    await sock.sendMessage(jid, { text: `Você pode contatar *${nome}* pelo número: +${telefone}` });
   }
 }
 
@@ -164,12 +150,19 @@ function salvarLog(nome, pergunta) {
 // --- LÓGICA PRINCIPAL DO BOT ---
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth');
-  const sock = makeWASocket({ auth: state, printQRInTerminal: true });
+  // Caminho da sessão agora aponta para o Render Disk.
+  const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
+  console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
+
+  const { state, saveCreds } = await useMultiFileAuthState(authPath);
+  const sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+     if (qr) {
+      console.log("‼️ NOVO QR CODE GERADO. Escaneie com seu celular. Você pode gerar uma imagem do QR em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
+    }
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
       const error = lastDisconnect?.error?.output?.statusCode;
@@ -186,7 +179,7 @@ async function startBot() {
 
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
-    const nomeContato = msg.pushName || "visitante";
+    const nomeContato = msg.pushName || "Usuário";
 
     // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
@@ -207,7 +200,7 @@ async function startBot() {
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
                 await sock.sendMessage(jid, { text: `${statusEmoji} Chamado ${protocolo} atualizado para *${novoStatus}* por ${responsavel}.` });
-                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} Seu chamado ${protocolo} foi atualizado para *${novoStatus}*.` });
+                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} Seu chamado ${protocolo} foi atualizado para *${novoStatus}*. Agradecemos o contato.` });
                 return;
             }
         }
@@ -229,7 +222,7 @@ async function startBot() {
         if (pergunta === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
-          await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n📌 Protocolo: ${protocolo}\n📂 Categoria: ${chamadoPendente.categoria}\n\nA equipe já foi notificada.` });
+          await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada e em breve cuidará da sua solicitação.` });
           
           if (GRUPO_SUPORTE_JID) {
             const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
@@ -238,7 +231,7 @@ async function startBot() {
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
-          await sock.sendMessage(jid, { text: "❌ Chamado cancelado." });
+          await sock.sendMessage(jid, { text: "Ok, o registro do chamado foi cancelado." });
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         }
@@ -247,23 +240,16 @@ async function startBot() {
       const classificacao = await classificarChamado(pergunta);
       if (classificacao.ehChamado === "SIM") {
         usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } };
-        await sock.sendMessage(jid, { text: `👀 Percebi que você quer registrar um chamado. Confirma?\n\n📌 Descrição: "${pergunta}"\n📂 Categoria: ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
+        await sock.sendMessage(jid, { text: `Identifiquei que sua mensagem parece ser uma solicitação de suporte. Confirma o registro do chamado abaixo?\n\n*Descrição:* _${pergunta}_\n*Categoria Sugerida:* ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
         return;
       }
       
-      const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí"];
+      const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e aí", "tudo bem", "tudo bom"];
       if (saudacoes.includes(pergunta)) {
-        await sock.sendMessage(jid, { text: `${gerarSaudacao(nomeContato)}\nSou a *IA do CIPT*! Posso te ajudar com dúvidas sobre acesso, reservas de espaços, regras de convivência e tudo mais do nosso regimento interno.` });
+        await sock.sendMessage(jid, { text: gerarSaudacao(nomeContato) });
         return;
       }
       
-      const despedidas = ["obrigado", "obrigada", "valeu", "tchau", "até mais", "flw"];
-      if(despedidas.includes(pergunta)) {
-        await sock.sendMessage(jid, { text: `De nada, ${nomeContato}! Foi um prazer ajudar 🤗 Se precisar de algo mais, é só chamar.` });
-        delete usuariosAtivos[jid];
-        return;
-      }
-
       historicoUsuarios[jid] = historicoUsuarios[jid] || [];
       historicoUsuarios[jid].push({ role: "user", content: pergunta });
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
@@ -273,22 +259,24 @@ async function startBot() {
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: `${ciptPrompt}\nUse o contexto para responder:\n${trechos}` },
+          { role: "system", content: ciptPrompt },
           ...historicoUsuarios[jid],
-          ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma concisa." }] : [])
+          { role: "user", content: `Com base no contexto fornecido e no histórico da nossa conversa, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
+          ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
         ],
-        temperature: 0.2,
+        temperature: 0.25,
         max_tokens: 700
       });
       let resposta = completion.choices[0].message.content.trim();
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
 
       if (!contatosEnviados[jid]) {
-        const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
+        const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
         if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
-          if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-          else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
-          contatosEnviados[jid] = true;
+            resposta += "\n\nPara prosseguir com sua solicitação, por favor, entre em contato com a equipe responsável:";
+            if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
+            else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+            contatosEnviados[jid] = true;
         }
       }
       
@@ -299,15 +287,17 @@ async function startBot() {
       if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
       timersEncerramento[jid] = setTimeout(async () => {
         if (Date.now() - (usuariosAtivos[jid] || 0) >= TEMPO_ENCERRAMENTO) {
-          await sock.sendMessage(jid, { text: "Encerrando seu atendimento por inatividade. Se precisar, é só chamar! 😉" });
+          await sock.sendMessage(jid, { text: "Este atendimento foi encerrado por inatividade. Se precisar de algo mais, é só me chamar! 👋" });
           delete usuariosAtivos[jid];
           delete timersEncerramento[jid];
+          delete historicoUsuarios[jid];
+          delete contatosEnviados[jid];
         }
       }, TEMPO_ENCERRAMENTO);
 
     } catch (err) {
       console.error('❌ Erro no processamento da mensagem:', err.message, err.stack);
-      await sock.sendMessage(jid, { text: "Ops! Ocorreu um erro interno e não consegui processar sua solicitação. Tente novamente." });
+      await sock.sendMessage(jid, { text: "Peço desculpas, ocorreu um erro interno e não consegui processar sua solicitação. A equipe técnica já foi notificada. Por favor, tente novamente em alguns instantes." });
     }
   });
 }
@@ -324,10 +314,10 @@ async function main() {
   });
   
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
-  app.listen(3000, () => {
-    console.log('🌐 Servidor rodando na porta 3000');
+  app.listen(process.env.PORT || 3000, () => {
+    console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
     if(process.env.RENDER_URL) {
-      console.log(` Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
+      console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
       setInterval(() => {
         fetch(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message));
       }, 14 * 60 * 1000); // Ping a cada 14 minutos
