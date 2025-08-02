@@ -186,36 +186,51 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
+
+     // Substitua esta seção no seu index.js
+
+// --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
+if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+    const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
     
-     // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
-    if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-        const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
-        
-        // CORREÇÃO: Lógica mais robusta para ler o texto da mensagem original
-        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
-        const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
+    // Pega o JID de quem respondeu (ex: 558299992881@s.whatsapp.net)
+    const jidDoParticipante = msg.key.participant;
 
-        const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
+    const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+    const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
 
-        if (matchProtocolo) {
-            const protocolo = matchProtocolo[1];
-            const responsavel = nomeContato;
-            let novoStatus = "";
+    const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
-            if (textoResposta === "1") novoStatus = "Em Atendimento";
-            else if (textoResposta === "2") novoStatus = "Concluído";
-            else if (textoResposta === "3") novoStatus = "Rejeitado";
+    if (matchProtocolo) {
+        const protocolo = matchProtocolo[1];
+        const responsavel = nomeContato;
+        let novoStatus = "";
 
-            if (novoStatus) {
-                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
-                const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-                await sock.sendMessage(jid, { text: `${statusEmoji} Chamado ${protocolo} atualizado para *${novoStatus}* por ${responsavel}.` });
-                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} Seu chamado ${protocolo} foi atualizado para *${novoStatus}*. Agradecemos o contato.` });
-                return;
+        if (textoResposta === "1") novoStatus = "Em Atendimento";
+        else if (textoResposta === "2") novoStatus = "Concluído";
+        else if (textoResposta === "3") novoStatus = "Rejeitado";
+
+        if (novoStatus) {
+            const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
+            const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
+
+            // Mensagem de confirmação que será enviada no PRIVADO de quem respondeu
+            const mensagemConfirmacao = `${statusEmoji} Você atualizou o status do chamado *${protocolo}* para *${novoStatus}*. O usuário que abriu o chamado já foi notificado.`;
+            
+            // Envia a confirmação no privado
+            if(jidDoParticipante) {
+                await sock.sendMessage(jidDoParticipante, { text: mensagemConfirmacao });
             }
+
+            // Notifica o usuário original no privado
+            if (usuarioJid) {
+                const mensagemUsuario = `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}* por ${responsavel}.`;
+                await sock.sendMessage(usuarioJid, { text: mensagemUsuario });
+            }
+            return;
         }
     }
-
+}
     // --- LÓGICA DE PROCESSAMENTO DE MENSAGENS DO USUÁRIO ---
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
