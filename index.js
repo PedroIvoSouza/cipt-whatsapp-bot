@@ -348,15 +348,24 @@ async function startBot() {
           });
 
           if (GRUPO_SUPORTE_JID) {
-            await sock.sendMessage(GRUPO_SUPORTE_JID, {
-              text: `🚨 Novo chamado aberto!\n📌 Protocolo: ${protocolo}\n👤 Usuário: ${nomeContato}\n📂 Categoria: ${chamado.categoria}\n📝 Descrição: ${chamado.descricao}`,
-              templateButtons: [
-                { index: 1, quickReplyButton: { displayText: "Chamado em Atendimento", id: `atendimento_${protocolo}` } },
-                { index: 2, quickReplyButton: { displayText: "Chamado Concluído", id: `concluido_${protocolo}` } },
-                { index: 3, quickReplyButton: { displayText: "Chamado Rejeitado", id: `rejeitado_${protocolo}` } },
-              ]
-            });
-          }
+            // 1. Defina os botões no formato correto
+            const buttons = [
+                { buttonId: `atendimento_${protocolo}`, buttonText: { displayText: 'Em Atendimento' }, type: 1 },
+                { buttonId: `concluido_${protocolo}`, buttonText: { displayText: 'Concluído' }, type: 1 },
+                { buttonId: `rejeitado_${protocolo}`, buttonText: { displayText: 'Rejeitado' }, type: 1 }
+            ];
+
+            // 2. Crie a mensagem completa
+            const buttonMessage = {
+                text: `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Categoria:* ${chamado.categoria}\n*Descrição:* ${chamado.descricao}`,
+                footer: 'Clique em um botão para atualizar o status', // Opcional, mas melhora a UI
+                buttons: buttons,
+                headerType: 1
+            };
+
+            // 3. Envie a mensagem
+            await sock.sendMessage(GRUPO_SUPORTE_JID, buttonMessage);
+        }
 
           delete usuariosAtivos[jid].chamadoPendente;
           return;
