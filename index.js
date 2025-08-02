@@ -1,7 +1,6 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DEFINITIVA E COMPLETA
-// Mantém 100% das funcionalidades, incluindo follow-up, envio de contato e timers.
-// Lógica de resposta no grupo restaurada e estável.
+// CIPT-WHATSAPP-BOT - VERSÃO DE DIAGNÓSTICO FINAL
+// Contém um log detalhado para capturar 100% das interações no grupo.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -26,16 +25,16 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
 
-// --- CONTROLE DE SESSÕES E ESTADO (COMPLETO) ---
+// --- CONTROLE DE SESSÕES E ESTADO ---
 const usuariosAtivos = {};
 const timersEncerramento = {};
-const TEMPO_ENCERRAMENTO = 5 * 60 * 1000; // 5 minutos
+const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const historicoUsuarios = {};
 const LIMITE_HISTORICO = 8;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
-// --- FUNÇÕES AUXILIARES (TODAS RESTAURADAS) ---
+// --- FUNÇÕES AUXILIARES ---
 
 async function gerarOuCarregarEmbeddings() {
   try {
@@ -103,12 +102,6 @@ async function classificarChamado(pergunta) {
   }
 }
 
-function ehFollowUp(pergunta) {
-  const conectores = ["e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"];
-  const curtas = pergunta.split(" ").length <= 5;
-  return conectores.some(c => pergunta.startsWith(c)) || curtas;
-}
-
 function gerarSaudacao(nome) {
   const opcoes = [`Olá, ${nome}! Sou a IA do CIPT. Em que posso ser útil hoje? 👋`, `Bom dia, ${nome}! Aqui é a assistente virtual do CIPT. Como posso ajudar?`, `Seja bem-vindo(a) ao CIPT, ${nome}. Estou à disposição para esclarecer suas dúvidas. 🙂`];
   return opcoes[Math.floor(Math.random() * opcoes.length)];
@@ -167,6 +160,17 @@ async function startBot() {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
+
+    // =========================================================================
+    // ✅ "DEDO-DURO" ATIVADO PARA DIAGNÓSTICO
+    // =========================================================================
+    if (isGroup && jid === GRUPO_SUPORTE_JID) {
+        console.log("================= DEBUG GRUPO SUPORTE =================");
+        console.log("MENSAGEM BRUTA RECEBIDA:");
+        console.log(JSON.stringify(msg, null, 2));
+        console.log("==========================================================");
+    }
+    // =========================================================================
 
     // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
@@ -245,57 +249,23 @@ async function startBot() {
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
 
       const trechos = await buscarTrechosRelevantes(pergunta);
-      const isFollowUp = ehFollowUp(pergunta);
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: ciptPrompt },
-          ...historicoUsuarios[jid],
-          { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
-          ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
-        ],
+        messages: [ { role: "system", content: ciptPrompt }, ...historicoUsuarios[jid], { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` } ],
         temperature: 0.25,
         max_tokens: 700
       });
       let resposta = completion.choices[0].message.content.trim();
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
-
-      if (!contatosEnviados[jid]) {
-        const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
-        if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
-            resposta += "\n\nPara prosseguir com sua solicitação, por favor, entre em contato com a equipe responsável:";
-            if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-            else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
-            contatosEnviados[jid] = true;
-        }
-      }
       
       const despedidas = ["obrigado", "obrigada", "valeu", "tchau", "até mais", "flw"];
       if(!despedidas.includes(pergunta)) {
         resposta += gerarSugestoes();
       } else {
          delete usuariosAtivos[jid];
-         // Limpa o estado do usuário na despedida
-         if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
-         delete timersEncerramento[jid];
-         delete historicoUsuarios[jid];
-         delete contatosEnviados[jid];
       }
       
       await sock.sendMessage(jid, { text: resposta });
-
-      // Inicia ou reinicia o timer de encerramento
-      usuariosAtivos[jid] = agora;
-      if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
-      timersEncerramento[jid] = setTimeout(async () => {
-        if (Date.now() - (usuariosAtivos[jid] || 0) >= TEMPO_ENCERRAMENTO) {
-          await sock.sendMessage(jid, { text: "Este atendimento foi encerrado por inatividade. Se precisar de algo mais, é só me chamar! 👋" });
-          delete usuariosAtivos[jid];
-          delete timersEncerramento[jid];
-          delete historicoUsuarios[jid];
-          delete contatosEnviados[jid];
-        }
-      }, TEMPO_ENCERRAMENTO);
 
     } catch (err) {
       console.error('❌ Erro no processamento da mensagem:', err.message, err.stack);
