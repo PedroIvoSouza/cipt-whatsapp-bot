@@ -186,17 +186,7 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
-    // =========================================================================
-    // ✅ "DEDO-DURO" ATIVADO PARA DIAGNÓSTICO
-    // =========================================================================
-    if (isGroup && jid === GRUPO_SUPORTE_JID) {
-        console.log("================= DEBUG GRUPO SUPORTE =================");
-        console.log(JSON.stringify(msg, null, 2));
-        console.log("==========================================================");
-    }
-    // =========================================================================
-
-
+    
      // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
@@ -245,24 +235,30 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada e em breve cuidará da sua solicitação.` });
           
          if (GRUPO_SUPORTE_JID) {
-           // --- INÍCIO DO TESTE DE MENSAGEM ---
-    
-            // Deixe a sua mensagem original comentada por enquanto
-            /*
-            const menuTextoOriginal = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
-            */
+           if (GRUPO_SUPORTE_JID) {
+            // PASSO 1: O bot envia a mensagem de alerta original e completa.
+            const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
 
-            // Teste 1: A mensagem mais simples possível. Sem formatação, sem emojis, sem quebra de linha.
-            const menuTexto = `Novo chamado para teste de sincronia. Protocolo: ${protocolo}. Por favor, responda a esta mensagem com 1, 2 ou 3.`;
-            
-            // Se o Teste 1 funcionar, o problema é a formatação. Depois podemos tentar reintroduzir elementos um a um.
-            // Ex: Teste 2 (com quebra de linha): const menuTexto = `Novo chamado para teste.\nProtocolo: ${protocolo}`;
-            // Ex: Teste 3 (com negrito): const menuTexto = `*Novo chamado para teste.*\nProtocolo: ${protocolo}`;
-            
-            console.log(`[TESTE DE SINCRONIA] Enviando mensagem simples para o grupo: "${menuTexto}"`);
-            await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
-            
-            // --- FIM DO TESTE DE MENSAGEM ---
+            const sentMsg = await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
+            console.log(`[ALERTA] Mensagem de novo chamado ${protocolo} enviada para o grupo.`);
+
+            // PASSO 2 (NOVO): O bot responde a si mesmo para forçar a sincronização em todos os aparelhos.
+            // Usamos um pequeno delay para garantir que a primeira mensagem seja processada.
+            setTimeout(async () => {
+                try {
+                    const textoResposta = `Status do chamado *${protocolo}* pendente de atualização.`;
+                    await sock.sendMessage(
+                        GRUPO_SUPORTE_JID,
+                        { text: textoResposta },
+                        { quoted: sentMsg } // <-- A mágica acontece aqui, citando a mensagem anterior.
+                    );
+                    console.log(`[SYNC] Auto-resposta para o chamado ${protocolo} enviada para forçar sincronia.`);
+                } catch (err) {
+                    console.error("❌ Erro ao enviar a auto-resposta de sincronização:", err);
+                }
+            }, 1500); // Delay de 1.5 segundos
+        }
+
 }
           delete usuariosAtivos[jid].chamadoPendente;
           return;
