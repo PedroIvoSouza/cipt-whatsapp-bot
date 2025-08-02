@@ -1,6 +1,6 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DEFINITIVA E CORRIGIDA (BASEADA NO LOG)
-// Contém todas as funcionalidades e a correção final para a leitura de respostas.
+// CIPT-WHATSAPP-BOT - VERSÃO ESTÁVEL E FOCADA
+// Restaura a lógica de resposta no grupo que já foi validada como funcional no WhatsApp Web.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -25,7 +25,7 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
 
-// --- CONTROLE DE SESSÕES E ESTADO ---
+// --- CONTROLE DE SESSÕES E ESTADO (COMPLETO) ---
 const usuariosAtivos = {};
 const timersEncerramento = {};
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
@@ -167,46 +167,35 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
-   // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
-if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-    const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
-    const jidDoParticipante = msg.key.participant;
-    const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
-    const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
-    const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
+    // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
+    if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+        const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
+        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+        const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
+        const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
-    if (matchProtocolo) {
-        const protocolo = matchProtocolo[1];
-        const responsavel = nomeContato;
-        let novoStatus = "";
+        if (matchProtocolo) {
+            const protocolo = matchProtocolo[1];
+            const responsavel = nomeContato;
+            let novoStatus = "";
+            if (textoResposta === "1") novoStatus = "Em Atendimento";
+            else if (textoResposta === "2") novoStatus = "Concluído";
+            else if (textoResposta === "3") novoStatus = "Rejeitado";
 
-        if (textoResposta === "1") novoStatus = "Em Atendimento";
-        else if (textoResposta === "2") novoStatus = "Concluído";
-        else if (textoResposta === "3") novoStatus = "Rejeitado";
-
-        if (novoStatus) {
-            const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
-            const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-
-            // ESTRATÉGIA HÍBRIDA FINAL:
-            // 1. Mensagem curta para o GRUPO (para registro público)
-            await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado ${protocolo} atualizado para *${novoStatus}* por ${responsavel}.` });
-
-            // 2. Mensagem detalhada e GARANTIDA para quem respondeu (no privado)
-            if(jidDoParticipante) {
-                const mensagemConfirmacao = `${statusEmoji} Você atualizou o status do chamado *${protocolo}* para *${novoStatus}*. O usuário que abriu o chamado também foi notificado.`;
-                await sock.sendMessage(jidDoParticipante, { text: mensagemConfirmacao });
+            if (novoStatus) {
+                console.log(`[PROCESSANDO RESPOSTA] Protocolo: ${protocolo}, Novo Status: ${novoStatus}, Responsável: ${responsavel}`);
+                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
+                const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
+                
+                await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
+                
+                if (usuarioJid) {
+                    await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+                }
+                return;
             }
-
-            // 3. Notificação para o usuário original
-            if (usuarioJid) {
-                const mensagemUsuario = `O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.`;
-                await sock.sendMessage(usuarioJid, { text: mensagemUsuario });
-            }
-            return;
         }
     }
-}
 
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
