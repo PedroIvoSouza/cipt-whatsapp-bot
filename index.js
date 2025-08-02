@@ -122,11 +122,16 @@ function gerarSugestoes() {
 
 async function enviarContato(sock, jid, nome, telefone) {
   try {
+    // PASSO 1: Envia a mensagem de aviso
+    await sock.sendMessage(jid, { text: `Certo! Estou enviando o contato de "${nome}" para você.` });
+
+    // PASSO 2: Envia o vCard com o contato
     const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${nome}\nTEL;type=CELL;type=VOICE;waid=${telefone}:${telefone}\nEND:VCARD`;
     await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
+
   } catch (err) {
     console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
-    await sock.sendMessage(jid, { text: `Você pode contatar *${nome}* pelo número: +${telefone}` });
+    await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}` });
   }
 }
 
@@ -277,12 +282,16 @@ Responda a esta mensagem com uma das opções:
       let resposta = completion.choices[0].message.content.trim();
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
 
-      if (!contatosEnviados[jid]) {
+           if (!contatosEnviados[jid]) {
         const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
         if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
-            resposta += "\n\nPara prosseguir com sua solicitação, por favor, entre em contato com a equipe responsável:";
-            if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "Reservas Auditório CIPT", "558287145526");
-            else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Recepção CIPT", "558288334368");
+            
+            if (resposta.toLowerCase().includes("auditório")) {
+                await enviarContato(sock, jid, "SUPTI - Reservas do Auditório", "558287145526");
+            } 
+            else if (resposta.toLowerCase().includes("sala de reunião")) {
+                await enviarContato(sock, jid, "Portaria do Centro de Inovação", "558288334368");
+            }
             contatosEnviados[jid] = true;
         }
       }

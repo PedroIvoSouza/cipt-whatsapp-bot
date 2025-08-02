@@ -3,32 +3,32 @@
 # ===============================================
 
 P: O Centro de Inovação está aberto? Qual o horário de funcionamento do CIPT?
-R: O CIPT funciona 24 horas por dia, 7 dias por semana, para usuários e empresas já cadastradas com acesso via reconhecimento facial. A recepção, para atendimento geral e novos cadastros, funciona em horário comercial, de segunda a sexta, das 8h às 18h.
+R: O CIPT funciona 24 horas por dia, 7 dias por semana, para usuários e empresasvcom acesso via reconhecimento facial. No local existe uma recepção para atendimento geral e novos cadastros.
 
 P: Como faço para ter acesso ao CIPT? Preciso me cadastrar?
-R: Sim, o acesso ao prédio é feito por reconhecimento facial. Para agilizar, você pode fazer um pré-cadastro online no site https://cipt.facedoor.com.br/. O cadastro é finalizado presencialmente na recepção, que funciona de segunda a sexta, das 8h às 18h.
+R: Sim, o acesso ao prédio é feito por reconhecimento facial. Para agilizar, você pode fazer um pré-cadastro online no site https://cipt.facedoor.com.br/. O cadastro também pode ser feito presencialmente na recepção.
 
 P: Quanto custa para usar o coworking?
 R: O uso do coworking público, com suas 104 estações de trabalho e internet de alta velocidade, é totalmente gratuito. Basta realizar seu cadastro na recepção.
 
 P: Como posso reservar uma sala de reunião?
-R: O agendamento das salas de reunião compartilhadas para os permissionários é feito pelo sistema online no site https://agendamento.cipt.al.gov.br/.
+R: O agendamento das salas de reunião do prédio, para os permissionários é feita através do contato da recepção do CIPT. As salas de reuniões de uso geral, no térreo do prédio, devem ser reservadas de forma presencial e atendendo as normativas estabelecidas no regimento interno do prédio.
 
 P: Como funciona o estacionamento?
-R: Para visitantes, o uso do estacionamento ocorre mediante identificação na portaria. Para as empresas instaladas no CIPT (permissionários), o contrato mensal por vaga custa R$80,00, e a diária avulsa é de R$4,00. As empresas devem providenciar seus próprios controles de acesso.
+R: Para visitantes, o uso do estacionamento ocorre mediante identificação na portaria. Para as empresas instaladas no CIPT (permissionários). As empresas devem providenciar suas próprias tags de acesso se quiserem outras além das que foram oferecidas pela gestão.
 
 # ===============================================
 # Auditório: Preços e Regras de Uso
 # ===============================================
 
 P: Qual a capacidade e o custo para alugar o auditório?
-R: O auditório possui 313 poltronas, mas a capacidade máxima pode chegar a 415 pessoas com o aluguel de cadeiras extras (não incluso no valor). A diária base é de R$ 4.906,60.
+R: O auditório possui 313 poltronas, mas a capacidade máxima pode chegar a 415 pessoas com o aluguel de cadeiras extras (não incluso no valor). Valores das diárias e datas podem ser consultadas através do contato que será enviado e através do email supcti@secti.al.gov.br
 
 P: Existe algum desconto para o aluguel do auditório?
 R: Sim. Para aluguéis de múltiplos dias consecutivos, há um desconto progressivo de 20% por diária, do segundo até o quinto dia. Além disso, as empresas instaladas no CIPT (permissionários) têm um desconto fixo de 60% sobre o valor da diária base.
 
 P: Como é feito o pagamento do auditório?
-R: O pagamento é realizado via Documento de Arrecadação (DAR) em favor do fundo FUNDECTES. Além do valor do aluguel, é exigido um cheque caução de 20% do valor total como garantia contra possíveis danos ao patrimônio.
+R: O pagamento é realizado via Documento de Arrecadação (DAR) em favor do fundo FUNDECTES. O pagamento pode ser parcelado desde que o sinal seja feito no ato da reserva e o valor total quitado até o dia do evento.
 
 P: Quais são minhas responsabilidades ao alugar o auditório?
 R: O locatário (permissionário) é responsável pela montagem e desmontagem de seus equipamentos, pela limpeza completa do espaço durante e após o evento (incluindo a compra de materiais), pela contratação de container para remoção de lixo, e pela indenização de quaisquer danos causados ao patrimônio. É fundamental respeitar a lotação máxima do espaço.
@@ -41,7 +41,7 @@ R: Se o evento for cancelado com menos de 30 dias de antecedência, o locatário
 # ===============================================
 
 P: Como minha empresa pode se instalar no CIPT?
-R: As empresas interessadas devem passar por um processo de credenciamento. O primeiro passo é fazer o cadastro no sistema CADCTI, no site https://cadcti.al.gov.br/. A equipe da SECTI avaliará a documentação e a proposta para garantir o alinhamento com os objetivos do Centro.
+R: As empresas interessadas devem passar por um processo de credenciamento. O primeiro passo é fazer o cadastro no sistema CADCTI, no site https://cadcti.al.gov.br/. A equipe da SECTI avaliará a documentação e a proposta para garantir o alinhamento com os objetivos do Centro. Atualmente o prédio está com 100% da sua capacidade de locação, mas as empresas interessadas podem fazer parte do credenciamento em vigência e aguardarem na fila de espera do mesmo.
 
 P: Qual o valor para alugar uma sala comercial no CIPT?
 R: O valor da permissão de uso (aluguel) é calculado por metro quadrado e varia de acordo com o tamanho da sala. A regra de preços é a seguinte:
@@ -64,7 +64,7 @@ R: Sim, mas é necessário um processo formal. A empresa deve submeter um formul
 # ===============================================
 
 P: Quais são as principais proibições nas áreas comuns?
-R: É proibido depredar o patrimônio, pisar na grama, produzir barulho excessivo (acima de 60 dB de dia e 55 dB à noite) e usar as portas de emergência para acesso regular. O transporte de materiais de construção e mobílias grandes deve ser feito pela escada de emergência, nunca pelo elevador.
+R: É proibido depredar o patrimônio, pisar na grama, produzir barulho excessivo e usar as portas de emergência para acesso regular. O transporte de materiais de construção e mobílias grandes deve ser feito pela escada de emergência, nunca pelo elevador.
 
 P: O que acontece se alguém descumprir as regras?
 R: A empresa permissionária é responsável pelos atos de seus funcionários. Após 3 advertências formais por infração às regras, será cobrada uma multa no valor de 50% da taxa condominial.
