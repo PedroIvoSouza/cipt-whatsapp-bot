@@ -148,12 +148,23 @@ function salvarLog(nome, pergunta) {
 }
 
 // --- LÓGICA PRINCIPAL DO BOT ---
-
 async function startBot() {
   // Caminho da sessão agora aponta para o Render Disk.
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
+
+  // =========================================================================
+  // ✅ CÓDIGO TEMPORÁRIO PARA LIMPAR A SESSÃO
+  // =========================================================================
+  if (fs.existsSync(authPath)) {
+      console.log("‼️ Sessão antiga encontrada. Limpando para gerar uma nova...");
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log("✅ Limpeza concluída.");
+  }
+  // =========================================================================
+
   console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
 
+  // A inicialização da sessão acontece aqui, UMA ÚNICA VEZ
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
@@ -172,6 +183,8 @@ async function startBot() {
       if (shouldReconnect) setTimeout(startBot, 5000);
     }
   });
+
+  // O restante do seu código (sock.ev.on('messages.upsert', ...)) continua aqui...
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
