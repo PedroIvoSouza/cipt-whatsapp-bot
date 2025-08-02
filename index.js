@@ -1,6 +1,7 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO ESTÁVEL E FOCADA
-// Restaura a lógica de resposta no grupo que já foi validada como funcional no WhatsApp Web.
+// CIPT-WHATSAPP-BOT - VERSÃO DE TESTE FINAL
+// Restaura a mensagem de alerta enxuta que permitia o funcionamento da resposta.
+// Adiciona log de diagnóstico para a extração do texto da resposta.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -25,7 +26,7 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
 
-// --- CONTROLE DE SESSÕES E ESTADO (COMPLETO) ---
+// --- CONTROLE DE SESSÕES E ESTADO ---
 const usuariosAtivos = {};
 const timersEncerramento = {};
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
@@ -172,6 +173,11 @@ async function startBot() {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
         const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
         const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
+
+        // --- DEBUG FINAL ---
+        console.log(`[DEBUG DA RESPOSTA] Texto extraído da mensagem original: "${textoMensagemOriginal}"`);
+        // --- FIM DO DEBUG ---
+
         const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
         if (matchProtocolo) {
@@ -183,7 +189,6 @@ async function startBot() {
             else if (textoResposta === "3") novoStatus = "Rejeitado";
 
             if (novoStatus) {
-                console.log(`[PROCESSANDO RESPOSTA] Protocolo: ${protocolo}, Novo Status: ${novoStatus}, Responsável: ${responsavel}`);
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
                 
@@ -215,7 +220,8 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
           if (GRUPO_SUPORTE_JID) {
-            const menuTexto = `🚨 *Novo chamado aberto!* 🚨\n\n*Protocolo:* ${protocolo}\n*Usuário:* ${nomeContato}\n*Telefone:* ${jid.split("@")[0]}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n-------------------------------------\n👉 *RESPONDA a esta mensagem com o número da opção:*\n*1* - Em Atendimento\n*2* - Concluído\n*3* - Rejeitado`;
+            // VOLTANDO PARA A MENSAGEM ENXUTA QUE FUNCIONAVA
+            const menuTexto = `Novo chamado aberto. Protocolo: ${protocolo}. Responda com 1, 2 ou 3.`;
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
           }
           delete usuariosAtivos[jid].chamadoPendente;
