@@ -24,6 +24,7 @@ app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
+let sock; 
 
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
@@ -186,7 +187,7 @@ async function enviarRelatorioDePendencias(sock) {
 // --- LÓGICA PRINCIPAL DO BOT ---
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const sock = makeWASocket({ auth: state });
+  sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
@@ -210,35 +211,44 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
-    if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-        const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
-        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
-        const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
-        const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
-        if (matchProtocolo) {
-            const protocolo = matchProtocolo[1];
-            const responsavel = nomeContato;
+    const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
+    const pergunta = corpoMensagem.toLowerCase().trim();
+
+    // ✅ NOVA LÓGICA DE COMANDO PRIVADO PARA A EQUIPE DE SUPORTE
+    if (!isGroup && equipeSuporteJids.includes(jid)) {
+        const matchComando = pergunta.match(/^(\d)\s+(CH-\d+)/i);
+        if (matchComando) {
+            const comando = matchComando[1];
+            const protocolo = matchComando[2].toUpperCase();
             let novoStatus = "";
-            if (textoResposta === "1") novoStatus = "Em Atendimento";
-            else if (textoResposta === "2") novoStatus = "Concluído";
-            else if (textoResposta === "3") novoStatus = "Rejeitado";
+
+            if (comando === "1") novoStatus = "Em Atendimento";
+            else if (comando === "2") novoStatus = "Concluído";
+            else if (comando === "3") novoStatus = "Rejeitado";
+
             if (novoStatus) {
-                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
+                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, nomeContato);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-                await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
-                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+
+                await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado *${protocolo}* atualizado para *${novoStatus}* com sucesso.` });
+
+                if (GRUPO_SUPORTE_JID) {
+                    const logGrupo = `[LOG] O status do chamado *${protocolo}* foi atualizado para *${novoStatus}* por ${nomeContato}.`;
+                    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
+                }
+                if (usuarioJid) {
+                    await sock.sendMessage(usuarioJid, { text: `O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+                }
                 return;
             }
         }
     }
-
-    const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
-    if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
     
-    const pergunta = corpoMensagem.replace(/@bot/gi, "").toLowerCase().trim();
-    if (!pergunta) return;
+    const perguntaNormalizada = corpoMensagem.replace(/@bot/gi, "").toLowerCase().trim();
+    if (isGroup && !pergunta.includes('@bot')) return;
+    if (!perguntaNormalizada) return;
 
-    salvarLog(nomeContato, pergunta);
+    salvarLog(nomeContato, perguntaNormalizada);
     const agora = Date.now();
     
     await sock.sendPresenceUpdate('composing', jid);
@@ -247,61 +257,68 @@ async function startBot() {
     try {
       if (usuariosAtivos[jid]?.chamadoPendente) {
         const chamadoPendente = usuariosAtivos[jid].chamadoPendente;
-        if (pergunta === "sim") {
+        if (perguntaNormalizada === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
-          await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
-          await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
-          
-          if (GRUPO_SUPORTE_JID) {
-            const responsaveis = routingMap[chamadoPendente.categoria] || [];
-            let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
-            if (responsaveis.length > 0) {
-              for (const responsavel of responsaveis) {
-                const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n*Ação necessária:* Por favor, vá ao grupo "Atendimento de Chamados" e responda à mensagem deste protocolo para atualizar o status.`;
-                await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
+          const sucesso = await registrarChamado({
+            protocolo, nome: nomeContato, telefone: jid.split("@")[0],
+            descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria,
+            status: "Aberto", usuarioJid: jid
+          });
+
+          if (sucesso) {
+            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
+            if (GRUPO_SUPORTE_JID) {
+              const responsaveis = routingMap[chamadoPendente.categoria] || [];
+              let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
+              const logGrupo = `[LOG] Novo chamado de *${chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
+              await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
+              if (responsaveis.length > 0) {
+                for (const responsavel of responsaveis) {
+                  const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n*Para atualizar, responda a esta mensagem com o comando no formato "NÚMERO PROTOCOLO"*. Exemplo:\n*1 ${protocolo}*`;
+                  await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
+                }
               }
-            } else {
-              nomesResponsaveis = "Nenhum responsável encontrado";
             }
-            await sock.sendPresenceUpdate('composing', GRUPO_SUPORTE_JID);
-            await delay(1200);
-            const logGrupo = `[LOG] Novo chamado de *${chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
-            await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
+          } else {
+            await sock.sendMessage(jid, { text: `😥 Desculpe, não consegui registrar seu chamado na planilha, mas já notifiquei a equipe sobre o problema. Por favor, aguarde.` });
+            if (GRUPO_SUPORTE_JID) {
+              await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `🚨 *ATENÇÃO, EQUIPE!* Falha ao registrar o chamado de ${nomeContato} na planilha. Verifiquem os logs. Descrição: "${chamadoPendente.descricao}"` });
+            }
           }
           delete usuariosAtivos[jid].chamadoPendente;
           return;
-        } else if (pergunta === "não" || pergunta === "nao") {
+        } else if (perguntaNormalizada === "não" || perguntaNormalizada === "nao") {
           await sock.sendMessage(jid, { text: "Ok, o registro do chamado foi cancelado." });
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         }
       }
 
-      const classificacao = await classificarChamado(pergunta);
+      const classificacao = await classificarChamado(perguntaNormalizada);
       if (classificacao.ehChamado === "SIM") {
-        usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } };
-        await sock.sendMessage(jid, { text: `Identifiquei que sua mensagem parece ser uma solicitação de suporte. Confirma o registro do chamado abaixo?\n\n*Descrição:* _${pergunta}_\n*Categoria Sugerida:* ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
+        usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: corpoMensagem, categoria: classificacao.categoria } };
+        await sock.sendMessage(jid, { text: `Identifiquei que sua mensagem parece ser uma solicitação de suporte. Confirma o registro do chamado abaixo?\n\n*Descrição:* _${corpoMensagem}_\n*Categoria Sugerida:* ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
         return;
       }
       
       const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"];
-      if (saudacoes.includes(pergunta)) {
+      if (saudacoes.includes(perguntaNormalizada)) {
         await sock.sendMessage(jid, { text: gerarSaudacao(nomeContato) });
         return;
       }
       
       historicoUsuarios[jid] = historicoUsuarios[jid] || [];
-      historicoUsuarios[jid].push({ role: "user", content: pergunta });
+      historicoUsuarios[jid].push({ role: "user", content: perguntaNormalizada });
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
 
-      const trechos = await buscarTrechosRelevantes(pergunta);
-      const isFollowUp = ehFollowUp(pergunta);
+      const trechos = await buscarTrechosRelevantes(perguntaNormalizada);
+      const isFollowUp = ehFollowUp(perguntaNormalizada);
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: getCiptPrompt(nomeContato) },
           ...historicoUsuarios[jid],
-          { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
+          { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${perguntaNormalizada}". Contexto: """${trechos}"""` },
           ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
         ],
         temperature: 0.25,
@@ -311,7 +328,7 @@ async function startBot() {
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
 
       if (!contatosEnviados[jid]) {
-        const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
+        const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${perguntaNormalizada}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
         if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
             if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "SUPTI - Reservas do Auditório", "558287145526");
             else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Portaria do Centro de Inovação", "558288334368");
@@ -320,7 +337,7 @@ async function startBot() {
       }
       
       const despedidas = ["obrigado", "obrigada", "valeu", "tchau", "até mais", "flw"];
-      if(!despedidas.includes(pergunta)) {
+      if(!despedidas.includes(perguntaNormalizada)) {
         resposta += gerarSugestoes();
       } else {
          delete usuariosAtivos[jid];
