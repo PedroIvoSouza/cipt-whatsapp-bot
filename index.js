@@ -15,7 +15,7 @@ const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
-const { ciptPrompt } = require("./ciptPrompt.js");
+const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado } = require("./sheetsChamados");
 
 dotenv.config();
@@ -188,6 +188,9 @@ async function startBot() {
             if (novoStatus) {
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
+                // ✅ ADICIONE ESTAS DUAS LINHAS AQUI
+                await sock.sendPresenceUpdate('composing', jid);
+                await delay(1200); // Atraso de 1.2 segundos
                 await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
                 if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
                 return;
@@ -216,6 +219,8 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
           if (GRUPO_SUPORTE_JID) {
+            await sock.sendPresenceUpdate('composing', GRUPO_SUPORTE_JID);
+            await delay(1200); // Atraso de 1.2 segundos
             const menuTexto = `Novo chamado aberto.\n\nProtocolo: ${protocolo}\nUsuário: ${nomeContato}\nDescrição: ${chamadoPendente.descricao}\n\nResponda a esta mensagem com uma das opções:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado`;
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
           }
@@ -246,11 +251,12 @@ async function startBot() {
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
 
       const trechos = await buscarTrechosRelevantes(pergunta);
-      const isFollowUp = ehFollowUp(pergunta);
+     const isFollowUp = ehFollowUp(pergunta);
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: ciptPrompt },
+          // ✅ ALTERAÇÃO: Agora chamamos a função passando o nome do contato
+          { role: "system", content: getCiptPrompt(nomeContato) }, 
           ...historicoUsuarios[jid],
           { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
           ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
