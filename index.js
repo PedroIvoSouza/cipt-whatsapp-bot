@@ -1,7 +1,6 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DE TESTE FINAL
-// Restaura a mensagem de alerta enxuta que permitia o funcionamento da resposta.
-// Adiciona log de diagnóstico para a extração do texto da resposta.
+// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL
+// Contém todas as funcionalidades, otimizações e remoção do teste de planilha.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -25,6 +24,7 @@ app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
+let sock; 
 
 // --- CONTROLE DE SESSÕES E ESTADO ---
 const usuariosAtivos = {};
@@ -122,13 +122,9 @@ function gerarSugestoes() {
 
 async function enviarContato(sock, jid, nome, telefone) {
   try {
-    // PASSO 1: Envia a mensagem de aviso
     await sock.sendMessage(jid, { text: `Certo! Estou enviando o contato de "${nome}" para você.` });
-
-    // PASSO 2: Envia o vCard com o contato
     const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${nome}\nTEL;type=CELL;type=VOICE;waid=${telefone}:${telefone}\nEND:VCARD`;
     await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
-
   } catch (err) {
     console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
     await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}` });
@@ -143,13 +139,15 @@ function salvarLog(nome, pergunta) {
   });
 }
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // --- LÓGICA PRINCIPAL DO BOT ---
 async function startBot() {
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
   console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
 
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const sock = makeWASocket({ auth: state });
+  sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
@@ -173,16 +171,10 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
-    // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
         const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
         const textoMensagemOriginal = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || "";
-
-        // --- DEBUG FINAL ---
-        console.log(`[DEBUG DA RESPOSTA] Texto extraído da mensagem original: "${textoMensagemOriginal}"`);
-        // --- FIM DO DEBUG ---
-
         const matchProtocolo = textoMensagemOriginal.match(/Protocolo:\s*(CH-\d+)/);
 
         if (matchProtocolo) {
@@ -196,12 +188,8 @@ async function startBot() {
             if (novoStatus) {
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-                
                 await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
-                
-                if (usuarioJid) {
-                    await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
-                }
+                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
                 return;
             }
         }
@@ -215,6 +203,9 @@ async function startBot() {
 
     salvarLog(nomeContato, pergunta);
     const agora = Date.now();
+    
+    await sock.sendPresenceUpdate('composing', jid);
+    await delay(1500);
 
     try {
       if (usuariosAtivos[jid]?.chamadoPendente) {
@@ -225,22 +216,9 @@ async function startBot() {
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
           if (GRUPO_SUPORTE_JID) {
-            // ✅ VERSÃO NOVA: MAIS INFORMATIVA E AINDA SEGURA
-            const menuTexto = `Novo chamado aberto.
-
-Protocolo: ${protocolo}
-Usuário: ${nomeContato}
-Descrição: ${chamadoPendente.descricao}
-
-Responda a esta mensagem com uma das opções:
-1 - Em Atendimento
-2 - Concluído
-3 - Rejeitado`;
-
+            const menuTexto = `Novo chamado aberto.\n\nProtocolo: ${protocolo}\nUsuário: ${nomeContato}\nDescrição: ${chamadoPendente.descricao}\n\nResponda a esta mensagem com uma das opções:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado`;
             await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
           }
-          // A chave extra que estava aqui foi removida.
-
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
@@ -249,6 +227,7 @@ Responda a esta mensagem com uma das opções:
           return;
         }
       }
+
       const classificacao = await classificarChamado(pergunta);
       if (classificacao.ehChamado === "SIM") {
         usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } };
@@ -282,16 +261,11 @@ Responda a esta mensagem com uma das opções:
       let resposta = completion.choices[0].message.content.trim();
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
 
-           if (!contatosEnviados[jid]) {
+      if (!contatosEnviados[jid]) {
         const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
         if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
-            
-            if (resposta.toLowerCase().includes("auditório")) {
-                await enviarContato(sock, jid, "SUPTI - Reservas do Auditório", "558287145526");
-            } 
-            else if (resposta.toLowerCase().includes("sala de reunião")) {
-                await enviarContato(sock, jid, "Portaria do Centro de Inovação", "558288334368");
-            }
+            if (resposta.toLowerCase().includes("auditório")) await enviarContato(sock, jid, "SUPTI - Reservas do Auditório", "558287145526");
+            else if (resposta.toLowerCase().includes("sala de reunião")) await enviarContato(sock, jid, "Portaria do Centro de Inovação", "558288334368");
             contatosEnviados[jid] = true;
         }
       }
@@ -331,6 +305,7 @@ Responda a esta mensagem com uma das opções:
 async function main() {
   await gerarOuCarregarEmbeddings();
   await startBot();
+  
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
@@ -342,3 +317,16 @@ async function main() {
 }
 
 main();
+
+// --- OTIMIZAÇÃO: LÓGICA DE DESLIGAMENTO GRACIOSO ---
+const gracefulShutdown = async (signal) => {
+  console.log(`[${signal}] Recebido. Desligando graciosamente...`);
+  if (sock) {
+    await sock.logout('Desligamento programado');
+    console.log('✅ Desconectado do WhatsApp.');
+  }
+  process.exit(0);
+};
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
