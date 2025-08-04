@@ -1,6 +1,5 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL E CORRIGIDA
-// Contém todas as funcionalidades e otimizações, com desligamento robusto.
+// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (UNIFICADA E CORRIGIDA)
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -26,7 +25,6 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 let embeddingsCache = [];
 let sock; 
 
-// ✅ CAMINHOS DEFINIDOS GLOBALMENTE PARA GARANTIR CONSISTÊNCIA
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
 
@@ -84,103 +82,110 @@ async function gerarOuCarregarEmbeddings() {
     console.error("❌ Erro ao carregar/gerar embeddings:", err.message);
   }
 }
-// ... (demais funções auxiliares como buscarTrechosRelevantes, classificarChamado, etc. continuam aqui, sem alterações)
+
 async function buscarTrechosRelevantes(pergunta) {
-    try {
-      const perguntaEmbedding = await client.embeddings.create({ model: "text-embedding-3-small", input: pergunta });
-      const perguntaVector = perguntaEmbedding.data[0].embedding;
-      const resultados = embeddingsCache.map(e => {
-        const dot = perguntaVector.reduce((acc, val, idx) => acc + val * e.vector[idx], 0);
-        const magA = Math.sqrt(perguntaVector.reduce((acc, val) => acc + val * val, 0));
-        const magB = Math.sqrt(e.vector.reduce((acc, val) => acc + val * val, 0));
-        const score = dot / (magA * magB);
-        return { trecho: e.trecho, score };
-      });
-      resultados.sort((a, b) => b.score - a.score);
-      const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
-      const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados).slice(0, 8).map(r => r.trecho);
-      return selecionados.join("\n\n");
-    } catch (err) {
-      console.error("❌ Erro ao buscar trechos:", err.message);
-      return "";
-    }
-  }
-async function classificarChamado(pergunta) {
-    try {
-      const resp = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Limpeza, Segurança e Portaria, Manutenção Civil, Energia Elétrica, Hidráulica / Vazamentos, Outros, Equipamentos / Móveis, Internet e Rede, Elevadores, Administrativo. Se não for chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
-        temperature: 0,
-        max_tokens: 50
-      });
-      return JSON.parse(resp.choices[0].message.content.trim());
-    } catch (err) {
-      console.error("❌ Erro ao classificar chamado:", err.message);
-      return { ehChamado: "NAO", categoria: "N/A" };
-    }
-  }
-function ehFollowUp(pergunta) {
-    const conectores = ["e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"];
-    const curtas = pergunta.split(" ").length <= 5;
-    return conectores.some(c => pergunta.startsWith(c)) || curtas;
-  }
-function gerarSaudacao(nome) {
-    const opcoes = [`Olá, ${nome}! Sou a IA do CIPT. Em que posso ser útil hoje? 👋`, `Bom dia, ${nome}! Aqui é a assistente virtual do CIPT. Como posso ajudar?`, `Seja bem-vindo(a) ao CIPT, ${nome}. Estou à disposição para esclarecer suas dúvidas. 🙂`];
-    return opcoes[Math.floor(Math.random() * opcoes.length)];
-  }
-function gerarSugestoes() {
-    const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?"];
-    const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 2);
-    return `\n\n*Posso ajudar com algo mais?* Você pode perguntar, por exemplo:\n- _${sorteadas[0]}_\n- _${sorteadas[1]}_`;
-  }
-async function enviarContato(sock, jid, nome, telefone) {
-    try {
-      await sock.sendMessage(jid, { text: `Certo! Estou enviando o contato de "${nome}" para você.` });
-      const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${nome}\nTEL;type=CELL;type=VOICE;waid=${telefone}:${telefone}\nEND:VCARD`;
-      await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
-    } catch (err) {
-      console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
-      await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}` });
-    }
-  }
-function salvarLog(nome, pergunta) {
-    const data = new Date().toLocaleString("pt-BR");
-    const linha = `[${data}] 👤 ${nome}: 💬 ${pergunta}\n`;
-    fs.appendFile("mensagens.log", linha, (err) => {
-      if (err) console.error("❌ Erro ao salvar log:", err);
+  try {
+    const perguntaEmbedding = await client.embeddings.create({ model: "text-embedding-3-small", input: pergunta });
+    const perguntaVector = perguntaEmbedding.data[0].embedding;
+    const resultados = embeddingsCache.map(e => {
+      const dot = perguntaVector.reduce((acc, val, idx) => acc + val * e.vector[idx], 0);
+      const magA = Math.sqrt(perguntaVector.reduce((acc, val) => acc + val * val, 0));
+      const magB = Math.sqrt(e.vector.reduce((acc, val) => acc + val * val, 0));
+      const score = dot / (magA * magB);
+      return { trecho: e.trecho, score };
     });
+    resultados.sort((a, b) => b.score - a.score);
+    const resultadosFiltrados = resultados.filter(r => r.score > 0.72);
+    const selecionados = (resultadosFiltrados.length > 0 ? resultadosFiltrados : resultados).slice(0, 8).map(r => r.trecho);
+    return selecionados.join("\n\n");
+  } catch (err) {
+    console.error("❌ Erro ao buscar trechos:", err.message);
+    return "";
   }
+}
+
+async function classificarChamado(pergunta) {
+  try {
+    const resp = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Limpeza, Segurança e Portaria, Manutenção Civil, Energia Elétrica, Hidráulica / Vazamentos, Outros, Equipamentos / Móveis, Internet e Rede, Elevadores, Administrativo. Se não for chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
+      temperature: 0,
+      max_tokens: 50
+    });
+    return JSON.parse(resp.choices[0].message.content.trim());
+  } catch (err) {
+    console.error("❌ Erro ao classificar chamado:", err.message);
+    return { ehChamado: "NAO", categoria: "N/A" };
+  }
+}
+
+function ehFollowUp(pergunta) {
+  const conectores = ["e ", "mas ", "então", "sobre isso", "e quanto", "e sobre", "ainda", "continuando", "ok", "certo"];
+  const curtas = pergunta.split(" ").length <= 5;
+  return conectores.some(c => pergunta.startsWith(c)) || curtas;
+}
+
+function gerarSaudacao(nome) {
+  const opcoes = [`Olá, ${nome}! Sou a IA do CIPT. Em que posso ser útil hoje? 👋`, `Bom dia, ${nome}! Aqui é a assistente virtual do CIPT. Como posso ajudar?`, `Seja bem-vindo(a) ao CIPT, ${nome}. Estou à disposição para esclarecer suas dúvidas. 🙂`];
+  return opcoes[Math.floor(Math.random() * opcoes.length)];
+}
+
+function gerarSugestoes() {
+  const opcoes = ["Como faço para reservar o auditório?", "Quais são as penalidades por descumprimento das regras?", "Posso levar animais para o CIPT?", "Quais são os horários de funcionamento?"];
+  const sorteadas = opcoes.sort(() => 0.5 - Math.random()).slice(0, 2);
+  return `\n\n*Posso ajudar com algo mais?* Você pode perguntar, por exemplo:\n- _${sorteadas[0]}_\n- _${sorteadas[1]}_`;
+}
+
+async function enviarContato(sock, jid, nome, telefone) {
+  try {
+    await sock.sendMessage(jid, { text: `Certo! Estou enviando o contato de "${nome}" para você.` });
+    const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${nome}\nTEL;type=CELL;type=VOICE;waid=${telefone}:${telefone}\nEND:VCARD`;
+    await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
+  } catch (err) {
+    console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
+    await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}` });
+  }
+}
+
+function salvarLog(nome, pergunta) {
+  const data = new Date().toLocaleString("pt-BR");
+  const linha = `[${data}] 👤 ${nome}: 💬 ${pergunta}\n`;
+  fs.appendFile("mensagens.log", linha, (err) => {
+    if (err) console.error("❌ Erro ao salvar log:", err);
+  });
+}
+
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function enviarRelatorioDePendencias() {
-    if (!sock || !GRUPO_SUPORTE_JID) return;
-    const chamadosAbertos = await verificarChamadosAbertos();
-    if (chamadosAbertos.length === 0) {
-      await sock.sendMessage(GRUPO_SUPORTE_JID, { text: "📈 *Relatório de Chamados*\n\nNenhum chamado pendente no momento. Bom trabalho, equipe! ✅" });
-      return;
-    }
-    const contagemPorResponsavel = {};
-    for (const chamado of chamadosAbertos) {
-      const responsaveis = routingMap[chamado.categoria] || [{ nome: 'Não atribuído' }];
-      for (const responsavel of responsaveis) {
-        contagemPorResponsavel[responsavel.nome] = (contagemPorResponsavel[responsavel.nome] || 0) + 1;
-      }
-    }
-    let mensagem = `📈 *Relatório de Chamados Pendentes*\n\nOlá, equipe! Temos *${chamadosAbertos.length} chamado(s)* que precisam de atenção:\n`;
-    for (const [nome, count] of Object.entries(contagemPorResponsavel)) {
-      mensagem += `\n- ${nome}: ${count} chamado(s) pendente(s)`;
-    }
-    mensagem += "\n\nPor favor, atualizem os status respondendo aos alertas no grupo. Vamos zerar essa fila! 💪";
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
+  if (!sock || !GRUPO_SUPORTE_JID) return;
+  const chamadosAbertos = await verificarChamadosAbertos();
+  if (chamadosAbertos.length === 0) {
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: "📈 *Relatório de Chamados*\n\nNenhum chamado pendente no momento. Bom trabalho, equipe! ✅" });
+    return;
   }
+  const contagemPorResponsavel = {};
+  for (const chamado of chamadosAbertos) {
+    const responsaveis = routingMap[chamado.categoria] || [{ nome: 'Não atribuído' }];
+    for (const responsavel of responsaveis) {
+      contagemPorResponsavel[responsavel.nome] = (contagemPorResponsavel[responsavel.nome] || 0) + 1;
+    }
+  }
+  let mensagem = `📈 *Relatório de Chamados Pendentes*\n\nOlá, equipe! Temos *${chamadosAbertos.length} chamado(s)* que precisam de atenção:\n`;
+  for (const [nome, count] of Object.entries(contagemPorResponsavel)) {
+    mensagem += `\n- ${nome}: ${count} chamado(s) pendente(s)`;
+  }
+  mensagem += "\n\nPor favor, atualizem os status respondendo aos alertas no grupo. Vamos zerar essa fila! 💪";
+  await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
+}
+
 
 async function startBot() {
-  console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
-    // ... (lógica do connection.update)
     const { connection, lastDisconnect, qr } = update;
      if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
@@ -194,12 +199,13 @@ async function startBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    // ... (lógica do messages.upsert)
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
+
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
+
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
         const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
@@ -221,14 +227,19 @@ async function startBot() {
             }
         }
     }
+
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
+    
     const pergunta = corpoMensagem.replace(/@bot/gi, "").toLowerCase().trim();
     if (!pergunta) return;
+
     salvarLog(nomeContato, pergunta);
     const agora = Date.now();
+    
     await sock.sendPresenceUpdate('composing', jid);
     await delay(1500);
+
     try {
       if (usuariosAtivos[jid]?.chamadoPendente) {
         const chamadoPendente = usuariosAtivos[jid].chamadoPendente;
@@ -236,6 +247,7 @@ async function startBot() {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
+          
           if (GRUPO_SUPORTE_JID) {
             const responsaveis = routingMap[chamadoPendente.categoria] || [];
             let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
@@ -260,20 +272,24 @@ async function startBot() {
           return;
         }
       }
+
       const classificacao = await classificarChamado(pergunta);
       if (classificacao.ehChamado === "SIM") {
         usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: pergunta, categoria: classificacao.categoria } };
         await sock.sendMessage(jid, { text: `Identifiquei que sua mensagem parece ser uma solicitação de suporte. Confirma o registro do chamado abaixo?\n\n*Descrição:* _${pergunta}_\n*Categoria Sugerida:* ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
         return;
       }
+      
       const saudacoes = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"];
       if (saudacoes.includes(pergunta)) {
         await sock.sendMessage(jid, { text: gerarSaudacao(nomeContato) });
         return;
       }
+      
       historicoUsuarios[jid] = historicoUsuarios[jid] || [];
       historicoUsuarios[jid].push({ role: "user", content: pergunta });
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
+
       const trechos = await buscarTrechosRelevantes(pergunta);
       const isFollowUp = ehFollowUp(pergunta);
       const completion = await client.chat.completions.create({
@@ -289,6 +305,7 @@ async function startBot() {
       });
       let resposta = completion.choices[0].message.content.trim();
       historicoUsuarios[jid].push({ role: "assistant", content: resposta });
+
       if (!contatosEnviados[jid]) {
         const decisao = await client.chat.completions.create({ model: "gpt-4o-mini", messages: [{ role: "system", content: "A resposta do assistente indica necessidade de contato humano (reservas, problemas administrativos)? Responda só SIM ou NÃO." }, { role: "user", content: `Usuário: ${pergunta}\nAssistente: ${resposta}` }], temperature: 0, max_tokens: 5 });
         if (decisao.choices[0].message.content.trim().toUpperCase().includes("SIM")) {
@@ -297,6 +314,7 @@ async function startBot() {
             contatosEnviados[jid] = true;
         }
       }
+      
       const despedidas = ["obrigado", "obrigada", "valeu", "tchau", "até mais", "flw"];
       if(!despedidas.includes(pergunta)) {
         resposta += gerarSugestoes();
@@ -307,7 +325,9 @@ async function startBot() {
          delete historicoUsuarios[jid];
          delete contatosEnviados[jid];
       }
+      
       await sock.sendMessage(jid, { text: resposta });
+
       usuariosAtivos[jid] = agora;
       if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
       timersEncerramento[jid] = setTimeout(async () => {
@@ -319,6 +339,7 @@ async function startBot() {
           delete contatosEnviados[jid];
         }
       }, TEMPO_ENCERRAMENTO);
+
     } catch (err) {
       console.error('❌ Erro no processamento da mensagem:', err.message, err.stack);
       await sock.sendMessage(jid, { text: "Peço desculpas, ocorreu um erro interno. Tente novamente." });
@@ -329,6 +350,7 @@ async function startBot() {
 async function main() {
   await gerarOuCarregarEmbeddings();
   await startBot();
+  
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
@@ -350,7 +372,6 @@ async function main() {
 
 main();
 
-// --- OTIMIZAÇÃO: LÓGICA DE DESLIGAMENTO GRACIOSO ---
 const gracefulShutdown = async (signal) => {
   console.log(`[${signal}] Recebido. Desligando graciosamente...`);
   if (sock) {
