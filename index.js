@@ -234,7 +234,8 @@ async function startBot() {
             else if (comando === "3") novoStatus = "Rejeitado";
 
             if (novoStatus) {
-                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, nomeContato);
+                // ✅ ALTERAÇÃO: Passamos o 'jid' de quem respondeu como o telefone do responsável.
+                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, nomeContato, jid);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
 
                 await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado *${protocolo}* atualizado para *${novoStatus}* com sucesso.` });
