@@ -1,6 +1,6 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL
-// Contém todas as funcionalidades, otimizações e remoção do teste de planilha.
+// CIPT-WHATSAPP-BOT - VERSÃO FINAL COM ROTEAMENTO INTELIGENTE
+// Contém todas as funcionalidades e o novo sistema de notificação híbrido.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -15,7 +15,7 @@ const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
-const { getCiptPrompt } = require("./ciptPrompt.js");
+const { ciptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado } = require("./sheetsChamados");
 
 dotenv.config();
@@ -35,13 +35,44 @@ const LIMITE_HISTORICO = 8;
 const contatosEnviados = {};
 const GRUPO_SUPORTE_JID = process.env.GRUPO_SUPORTE_JID;
 
+// ✅ NOVO MAPA DE ROTEAMENTO DE CHAMADOS
+const routingMap = {
+    // Mapeia Categoria para um array de { nome, jid }
+    // IMPORTANTE: Verifique se os números estão corretos
+    'Limpeza': [{ nome: 'Laysa', jid: '558287058516@s.whatsapp.net' }],
+    'Segurança e Portaria': [{ nome: 'Laysa', jid: '558287058516@s.whatsapp.net' }],
+    'Manutenção Civil': [{ nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }],
+    'Energia Elétrica': [{ nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }],
+    'Hidráulica / Vazamentos': [{ nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }],
+    'Outros': [
+        { nome: 'Laysa', jid: '558287058516@s.whatsapp.net' },
+        { nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }
+    ],
+    'Equipamentos / Móveis': [
+        { nome: 'Laysa', jid: '558287058516@s.whatsapp.net' },
+        { nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }
+    ],
+    'Internet e Rede': [
+        { nome: 'Laysa', jid: '558287058516@s.whatsapp.net' },
+        { nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }
+    ],
+    'Elevadores': [
+        { nome: 'Laysa', jid: '558287058516@s.whatsapp.net' },
+        { nome: 'Daisy', jid: '558293826962@s.whatsapp.net' }
+    ],
+    'Administrativo': [{ nome: 'Pedro Ivo', jid: '558299992881@s.whatsapp.net' }],
+};
+
+
 // --- FUNÇÕES AUXILIARES ---
 
 async function gerarOuCarregarEmbeddings() {
+  const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
+  console.log(`ℹ️ Verificando cache de embeddings em: ${embeddingsPath}`);
   try {
-    if (fs.existsSync('./embeddings.json')) {
-      embeddingsCache = JSON.parse(fs.readFileSync('./embeddings.json', 'utf8'));
-      console.log("📦 Embeddings carregados do cache.");
+    if (fs.existsSync(embeddingsPath)) {
+      embeddingsCache = JSON.parse(fs.readFileSync(embeddingsPath, 'utf8'));
+      console.log("📦 Embeddings carregados do cache no disco persistente.");
       return;
     }
     console.log("📄 Lendo documentos para a base de conhecimento...");
@@ -60,10 +91,10 @@ async function gerarOuCarregarEmbeddings() {
       const embedding = await client.embeddings.create({ model: "text-embedding-3-small", input: chunk });
       embeddingsCache.push({ trecho: chunk, vector: embedding.data[0].embedding });
     }
-    fs.writeFileSync('./embeddings.json', JSON.stringify(embeddingsCache, null, 2));
-    console.log("✅ Embeddings salvos em cache local.");
+    fs.writeFileSync(embeddingsPath, JSON.stringify(embeddingsCache, null, 2));
+    console.log("✅ Embeddings salvos em cache no disco persistente.");
   } catch (err) {
-    console.error("❌ Erro crítico ao carregar embeddings:", err.message);
+    console.error("❌ Erro ao carregar/gerar embeddings:", err.message);
   }
 }
 
@@ -92,7 +123,7 @@ async function classificarChamado(pergunta) {
   try {
     const resp = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Internet e Rede, Energia Elétrica, Limpeza, Manutenção Civil, Segurança e Portaria, Elevadores, Hidráulica / Vazamentos, Equipamentos / Móveis, Administrativo / Outros. Se não for chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
+      messages: [{ role: "system", content: "Sua tarefa é analisar a mensagem e responder em JSON: {\"ehChamado\":\"SIM ou NAO\",\"categoria\":\"Categoria Sugerida\"}. Categorias: Limpeza, Segurança e Portaria, Manutenção Civil, Energia Elétrica, Hidráulica / Vazamentos, Outros, Equipamentos / Móveis, Internet e Rede, Elevadores, Administrativo. Se não for chamado, use {\"ehChamado\":\"NAO\",\"categoria\":\"N/A\"}." }, { role: "user", content: pergunta }],
       temperature: 0,
       max_tokens: 50
     });
@@ -144,8 +175,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // --- LÓGICA PRINCIPAL DO BOT ---
 async function startBot() {
   const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
-  console.log(`ℹ️ Usando pasta de sessão em: ${authPath}`);
-
+  
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
@@ -171,6 +201,7 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
 
+    // --- LÓGICA DE ATUALIZAÇÃO DE CHAMADO (GRUPO DE SUPORTE) ---
     if (isGroup && jid === GRUPO_SUPORTE_JID && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
         const textoResposta = (msg.message.extendedTextMessage.text || "").trim();
         const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
@@ -188,11 +219,12 @@ async function startBot() {
             if (novoStatus) {
                 const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-                // ✅ ADICIONE ESTAS DUAS LINHAS AQUI
-                await sock.sendPresenceUpdate('composing', jid);
-                await delay(1200); // Atraso de 1.2 segundos
+                
                 await sock.sendMessage(jid, { text: `${statusEmoji} O status do chamado ${protocolo} foi atualizado para *${novoStatus}* por ${responsavel}.` });
-                if (usuarioJid) await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+                
+                if (usuarioJid) {
+                    await sock.sendMessage(usuarioJid, { text: `${statusEmoji} O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+                }
                 return;
             }
         }
@@ -218,12 +250,28 @@ async function startBot() {
           await registrarChamado({ protocolo, nome: nomeContato, telefone: jid.split("@")[0], descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria, status: "Aberto", usuarioJid: jid });
           await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
           
+          // ✅ NOVA LÓGICA DE NOTIFICAÇÃO HÍBRIDA
           if (GRUPO_SUPORTE_JID) {
+            const responsaveis = routingMap[chamadoPendente.categoria] || [];
+            let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
+
+            // 1. Notifica o(s) responsável(is) no privado
+            if (responsaveis.length > 0) {
+              for (const responsavel of responsaveis) {
+                const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n*Ação necessária:* Por favor, vá ao grupo "Atendimento de Chamados" e responda à mensagem deste protocolo para atualizar o status.`;
+                await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
+              }
+            } else {
+              nomesResponsaveis = "Nenhum responsável encontrado";
+            }
+
+            // 2. Envia um log simples e otimizado para o grupo
             await sock.sendPresenceUpdate('composing', GRUPO_SUPORTE_JID);
-            await delay(1200); // Atraso de 1.2 segundos
-            const menuTexto = `Novo chamado aberto.\n\nProtocolo: ${protocolo}\nUsuário: ${nomeContato}\nDescrição: ${chamadoPendente.descricao}\n\nResponda a esta mensagem com uma das opções:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado`;
-            await sock.sendMessage(GRUPO_SUPORTE_JID, { text: menuTexto });
+            await delay(1200);
+            const logGrupo = `[LOG] Novo chamado de *${chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
+            await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
           }
+
           delete usuariosAtivos[jid].chamadoPendente;
           return;
         } else if (pergunta === "não" || pergunta === "nao") {
@@ -251,12 +299,11 @@ async function startBot() {
       if (historicoUsuarios[jid].length > LIMITE_HISTORICO) historicoUsuarios[jid].splice(0, historicoUsuarios[jid].length - LIMITE_HISTORICO);
 
       const trechos = await buscarTrechosRelevantes(pergunta);
-     const isFollowUp = ehFollowUp(pergunta);
+      const isFollowUp = ehFollowUp(pergunta);
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          // ✅ ALTERAÇÃO: Agora chamamos a função passando o nome do contato
-          { role: "system", content: getCiptPrompt(nomeContato) }, 
+          { role: "system", content: getCiptPrompt(nomeContato) },
           ...historicoUsuarios[jid],
           { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${pergunta}". Contexto: """${trechos}"""` },
           ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])
@@ -311,7 +358,6 @@ async function startBot() {
 async function main() {
   await gerarOuCarregarEmbeddings();
   await startBot();
-  
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
