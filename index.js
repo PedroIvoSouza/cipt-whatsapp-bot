@@ -51,6 +51,13 @@ const routingMap = {
     'Administrativo': [{ nome: 'Pedro Ivo', jid: '558299992881@s.whatsapp.net' }],
 };
 
+// ✅ LISTA DE JIDs DA EQUIPE DE SUPORTE AUTORIZADA A DAR COMANDOS
+const equipeSuporteJids = [
+    '558287058516@s.whatsapp.net', // Laysa
+    '558293826962@s.whatsapp.net', // Daisy
+    '558299992881@s.whatsapp.net', // Pedro Ivo
+];
+
 // --- FUNÇÕES AUXILIARES ---
 
 async function gerarOuCarregarEmbeddings() {
