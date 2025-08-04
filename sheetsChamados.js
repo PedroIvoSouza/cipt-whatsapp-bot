@@ -1,12 +1,16 @@
+// sheetsChamados.js
 const { google } = require("googleapis");
 const dotenv = require('dotenv');
 dotenv.config();
 
-// Função para obter as credenciais, seja do arquivo local ou da variável de ambiente
+// ✅ FUNÇÃO ATUALIZADA PARA LER AS CREDENCIAIS CORRETAMENTE
 function getAuthClient() {
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         // Ambiente de produção (Render) - lê da variável de ambiente
-        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+        const credentialsBase64 = process.env.GOOGLE_CREDENTIALS_JSON;
+        // Decodifica o conteúdo de Base64 para o formato JSON original
+        const credentialsJson = Buffer.from(credentialsBase64, 'base64').toString('utf8');
+        const credentials = JSON.parse(credentialsJson);
         return google.auth.fromJSON(credentials);
     } else {
         // Ambiente local - lê do arquivo
@@ -19,7 +23,7 @@ function getAuthClient() {
 
 async function registrarChamado(dados) {
   try {
-    const auth = getAuthClient();
+    const auth = getAuthClient(); // Usa a nova função
     const client = await auth.getClient();
     const googleSheets = google.sheets({ version: "v4", auth: client });
     const spreadsheetId = process.env.SHEET_ID;
@@ -28,9 +32,13 @@ async function registrarChamado(dados) {
       range: "Chamados!A:G",
       valueInputOption: "USER_ENTERED",
       resource: {
-        values: [[ dados.protocolo, dados.nome, dados.telefone, dados.descricao, dados.categoria, dados.status, dados.usuarioJid ]],
+        values: [[
+          dados.protocolo, dados.nome, dados.telefone, dados.descricao,
+          dados.categoria, dados.status, dados.usuarioJid
+        ]],
       },
     });
+    console.log(`✅ Chamado ${dados.protocolo} registrado na planilha.`);
     return true;
   } catch (error) {
     console.error("❌ Erro ao registrar chamado na planilha:", error.message);
@@ -38,10 +46,9 @@ async function registrarChamado(dados) {
   }
 }
 
-// ... (as outras funções 'atualizarStatusChamado' e 'verificarChamadosAbertos' também precisam usar getAuthClient())
 async function atualizarStatusChamado(protocolo, novoStatus, responsavel) {
     try {
-        const auth = getAuthClient();
+        const auth = getAuthClient(); // Usa a nova função
         const client = await auth.getClient();
         const googleSheets = google.sheets({ version: "v4", auth: client });
         const spreadsheetId = process.env.SHEET_ID;
@@ -69,7 +76,7 @@ async function atualizarStatusChamado(protocolo, novoStatus, responsavel) {
 
 async function verificarChamadosAbertos() {
     try {
-        const auth = getAuthClient();
+        const auth = getAuthClient(); // Usa a nova função
         const client = await auth.getClient();
         const googleSheets = google.sheets({ version: "v4", auth: client });
         const spreadsheetId = process.env.SHEET_ID;
