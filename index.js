@@ -1,5 +1,6 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (UNIFICADA E CORRIGIDA)
+// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (COMPLETA E VERIFICADA)
+// Contém todas as funcionalidades, incluindo roteamento, relatórios e timers.
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -23,7 +24,6 @@ app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 let embeddingsCache = [];
-let sock; 
 
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
@@ -157,11 +157,15 @@ function salvarLog(nome, pergunta) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function enviarRelatorioDePendencias() {
-  if (!sock || !GRUPO_SUPORTE_JID) return;
+async function enviarRelatorioDePendencias(sock) {
+  if (!sock || !GRUPO_SUPORTE_JID) {
+    console.log("[RELATÓRIO] Bot não conectado ou grupo não definido.");
+    return;
+  }
   const chamadosAbertos = await verificarChamadosAbertos();
   if (chamadosAbertos.length === 0) {
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: "📈 *Relatório de Chamados*\n\nNenhum chamado pendente no momento. Bom trabalho, equipe! ✅" });
+    const mensagem = "📈 *Relatório de Chamados*\n\nNenhum chamado pendente no momento. Bom trabalho, equipe! ✅";
+    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
     return;
   }
   const contagemPorResponsavel = {};
@@ -179,10 +183,10 @@ async function enviarRelatorioDePendencias() {
   await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
 }
 
-
+// --- LÓGICA PRINCIPAL DO BOT ---
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  sock = makeWASocket({ auth: state });
+  const sock = makeWASocket({ auth: state });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
@@ -349,7 +353,7 @@ async function startBot() {
 
 async function main() {
   await gerarOuCarregarEmbeddings();
-  await startBot();
+  const sock = await startBot();
   
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
@@ -361,7 +365,7 @@ async function main() {
       console.log("⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.");
       cron.schedule('30 11,16 * * 1-5', () => {
         console.log('[CRON] Executando verificação de chamados pendentes...');
-        enviarRelatorioDePendencias();
+        enviarRelatorioDePendencias(sock);
       }, {
         scheduled: true,
         timezone: "America/Maceio"
@@ -372,18 +376,4 @@ async function main() {
 
 main();
 
-const gracefulShutdown = async (signal) => {
-  console.log(`[${signal}] Recebido. Desligando graciosamente...`);
-  if (sock) {
-    try {
-      await sock.logout('Desligamento programado');
-      console.log('✅ Desconectado do WhatsApp.');
-    } catch(err) {
-      console.error('❌ Erro durante o logout, mas finalizando mesmo assim.', err);
-    }
-  }
-  process.exit(0);
-};
-
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+// LÓGICA DE DESLIGAMENTO GRACIOSO REMOVIDA
