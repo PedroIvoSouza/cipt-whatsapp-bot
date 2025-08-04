@@ -217,16 +217,17 @@ async function startBot() {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
+    const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+    const pergunta = corpoMensagem.trim(); // Mantém o case para o protocolo
 
-    const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
-    const pergunta = corpoMensagem.toLowerCase().trim();
-
-    // ✅ NOVA LÓGICA DE COMANDO PRIVADO PARA A EQUIPE DE SUPORTE
+    // ✅ NOVA LÓGICA DE COMANDO PRIVADO (Formato: CH-12345 - 1)
     if (!isGroup && equipeSuporteJids.includes(jid)) {
-        const matchComando = pergunta.match(/^(\d)\s+(CH-\d+)/i);
+        const matchComando = pergunta.match(/^(CH-\d+)\s*-\s*(\d)$/i);
         if (matchComando) {
-            const comando = matchComando[1];
-            const protocolo = matchComando[2].toUpperCase();
+            const protocolo = matchComando[1].toUpperCase();
+            const comando = matchComando[2];
+            const responsavel = nomeContato;
+            const telefoneResponsavel = jid;
             let novoStatus = "";
 
             if (comando === "1") novoStatus = "Em Atendimento";
@@ -234,14 +235,13 @@ async function startBot() {
             else if (comando === "3") novoStatus = "Rejeitado";
 
             if (novoStatus) {
-                // ✅ ALTERAÇÃO: Passamos o 'jid' de quem respondeu como o telefone do responsável.
-                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, nomeContato, jid);
+                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel, telefoneResponsavel);
                 const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
 
                 await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado *${protocolo}* atualizado para *${novoStatus}* com sucesso.` });
 
                 if (GRUPO_SUPORTE_JID) {
-                    const logGrupo = `[LOG] O status do chamado *${protocolo}* foi atualizado para *${novoStatus}* por ${nomeContato}.`;
+                    const logGrupo = `[LOG] O status do chamado *${protocolo}* foi atualizado para *${novoStatus}* por ${responsavel}.`;
                     await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
                 }
                 if (usuarioJid) {
@@ -252,37 +252,38 @@ async function startBot() {
         }
     }
     
-    const perguntaNormalizada = corpoMensagem.replace(/@bot/gi, "").toLowerCase().trim();
-    if (isGroup && !pergunta.includes('@bot')) return;
+    const perguntaNormalizada = corpoMensagem.toLowerCase().trim().replace(/@bot/gi, "");
+    if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
     if (!perguntaNormalizada) return;
 
     salvarLog(nomeContato, perguntaNormalizada);
     const agora = Date.now();
-    
     await sock.sendPresenceUpdate('composing', jid);
     await delay(1500);
 
     try {
       if (usuariosAtivos[jid]?.chamadoPendente) {
-        const chamadoPendente = usuariosAtivos[jid].chamadoPendente;
         if (perguntaNormalizada === "sim") {
+          // ... (lógica de registro de chamado)
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           const sucesso = await registrarChamado({
             protocolo, nome: nomeContato, telefone: jid.split("@")[0],
-            descricao: chamadoPendente.descricao, categoria: chamadoPendente.categoria,
+            descricao: usuariosAtivos[jid].chamadoPendente.descricao, 
+            categoria: usuariosAtivos[jid].chamadoPendente.categoria,
             status: "Aberto", usuarioJid: jid
           });
-
+          
           if (sucesso) {
-            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
+            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuariosAtivos[jid].chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
             if (GRUPO_SUPORTE_JID) {
-              const responsaveis = routingMap[chamadoPendente.categoria] || [];
+              const responsaveis = routingMap[usuariosAtivos[jid].chamadoPendente.categoria] || [];
               let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
-              const logGrupo = `[LOG] Novo chamado de *${chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
+              const logGrupo = `[LOG] Novo chamado de *${usuariosAtivos[jid].chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
               await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
               if (responsaveis.length > 0) {
                 for (const responsavel of responsaveis) {
-                  const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${chamadoPendente.categoria}\n*Descrição:* ${chamadoPendente.descricao}\n\n*Para atualizar, responda a esta mensagem com o comando no formato "NÚMERO PROTOCOLO"*. Exemplo:\n*1 ${protocolo}*`;
+                  // ✅ NOVA MENSAGEM DE NOTIFICAÇÃO
+                  const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuariosAtivos[jid].chamadoPendente.categoria}\n*Descrição:* ${usuariosAtivos[jid].chamadoPendente.descricao}\n\nPara atualizar, responda a esta mensagem com o número do chamado + um dos comandos:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado\n\n*Exemplo:*\n${protocolo} - 1`;
                   await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
                 }
               }

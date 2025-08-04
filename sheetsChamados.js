@@ -3,8 +3,9 @@ const { google } = require("googleapis");
 const dotenv = require('dotenv');
 dotenv.config();
 
-// ✅ Função de autenticação corrigida para SEMPRE funcionar com .getClient()
-function getAuth() {
+const SHEET_NAME = "Página1";
+
+function getAuth() { 
   const scopes = "https://www.googleapis.com/auth/spreadsheets";
 
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
@@ -29,14 +30,23 @@ async function registrarChamado(dados) {
     const client = await auth.getClient();
     const googleSheets = google.sheets({ version: "v4", auth: client });
     const spreadsheetId = process.env.SHEET_ID;
+    
     await googleSheets.spreadsheets.values.append({
       spreadsheetId,
-      range: "Página1!A:I",
+      range: `${SHEET_NAME}!A:J`,
       valueInputOption: "USER_ENTERED",
       resource: {
         values: [[
-          dados.protocolo, dados.nome, dados.telefone, dados.descricao,
-          dados.categoria, dados.status, "", "", dados.usuarioJid
+          dados.protocolo,
+          new Date().toLocaleString("pt-BR"), // B: Data/Hora
+          dados.nome,
+          dados.telefone,
+          dados.descricao,
+          dados.categoria,
+          dados.status,
+          "", // H: Responsável (vazio)
+          "", // I: Telefone do Responsável (vazio)
+          dados.usuarioJid // J: JID do usuário (técnico)
         ]],
       },
     });
@@ -54,15 +64,15 @@ async function atualizarStatusChamado(protocolo, novoStatus, responsavel, telefo
         const client = await auth.getClient();
         const googleSheets = google.sheets({ version: "v4", auth: client });
         const spreadsheetId = process.env.SHEET_ID;
-        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId, range: "Página1!A:I" });
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId, range: `${SHEET_NAME}!A:J` });
         const rows = response.data.values;
         let rowIndex = -1;
         let usuarioJid = null;
 
         if (rows) {
           rowIndex = rows.findIndex(row => row[0] === protocolo);
-          if (rowIndex !== -1 && rows[rowIndex][8]) {
-            usuarioJid = rows[rowIndex][8];
+          if (rowIndex !== -1) {
+            usuarioJid = rows[rowIndex][9]; // Pega o JID do usuário da coluna J
           }
         }
 
@@ -73,9 +83,9 @@ async function atualizarStatusChamado(protocolo, novoStatus, responsavel, telefo
           resource: {
             valueInputOption: "USER_ENTERED",
             data: [
-              { range: `Página1!G${rowIndex + 1}`, values: [[novoStatus]] },
-              { range: `Página1!H${rowIndex + 1}`, values: [[responsavel]] },
-              { range: `Página1!I${rowIndex + 1}`, values: [[telefoneResponsavel.split('@')[0]]] }
+              { range: `${SHEET_NAME}!G${rowIndex + 1}`, values: [[novoStatus]] },
+              { range: `${SHEET_NAME}!H${rowIndex + 1}`, values: [[responsavel]] },
+              { range: `${SHEET_NAME}!I${rowIndex + 1}`, values: [[telefoneResponsavel.split('@')[0]]] }
             ]
           }
         });
