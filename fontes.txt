@@ -81,3 +81,18 @@ R: Seus dados são usados para finalidades como identificação e autorização 
 
 P: Quem é o responsável pela proteção dos meus dados no CIPT?
 R: O Encarregado de Proteção de Dados (DPO) é o Superintendente de Ciência, Tecnologia e Inovação. Em caso de dúvidas sobre seus dados, você pode contatá-lo pelo e-mail: supcti@secti.al.gov.br.
+
+===============================================
+Restaurante Portuá
+===============================================
+P: O que é o Restaurante Portuá e qual sua proposta?
+R: O Restaurante Portuá, localizado no Centro de Inovação do Jaraguá (CIPT), oferece um conceito de alta gastronomia aliado à qualificação profissional. O espaço busca integrar experiências culinárias de excelência com oportunidades de capacitação para estudantes e profissionais da área de gastronomia.
+
+P: Qual o horário de funcionamento do Portuá?
+R: O restaurante funciona de segunda a sexta-feira, das 8h às 18h. Há pretensões de expansão do horário de atendimento para melhor atender o público.
+
+P: O restaurante é aberto ao público?
+R: Sim, o Portuá é aberto ao público em geral, incluindo usuários e visitantes do CIPT.
+
+P: O Portuá oferece apenas refeições presenciais ou também opções para retirada?
+R: Atualmente, o foco principal é o atendimento presencial, com pratos elaborados e serviço no salão. Eventuais serviços de retirada ou eventos especiais poderão ser divulgados posteriormente.
