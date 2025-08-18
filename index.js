@@ -23,6 +23,9 @@ const app = express();
 app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const EMAIL_SUPORTE = 'supcti@secti.al.gov.br';
+const SITE_OFICIAL = 'secti.al.gov.br';
+
 let embeddingsCache = [];
 let sock; 
 
@@ -151,7 +154,7 @@ async function enviarContato(sock, jid, nome, telefone) {
     await sock.sendMessage(jid, { contacts: { displayName: nome, contacts: [{ vcard }] } });
   } catch (err) {
     console.error("❌ Erro ao enviar vCard, enviando fallback:", err.message);
-    await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}` });
+    await sock.sendMessage(jid, { text: `Houve um problema ao enviar o cartão de contato. Você pode contatar *${nome}* pelo número: +${telefone}. Para outras informações, escreva para ${EMAIL_SUPORTE} ou visite ${SITE_OFICIAL}.` });
   }
 }
 
@@ -341,7 +344,7 @@ async function startBot() {
       const completion = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: getCiptPrompt(nomeContato) },
+          { role: "system", content: getCiptPrompt(nomeContato, EMAIL_SUPORTE, SITE_OFICIAL) },
           ...historicoUsuarios[jid],
           { role: "user", content: `Com base no contexto, responda à minha última pergunta: "${perguntaNormalizada}". Contexto: """${trechos}"""` },
           ...(isFollowUp ? [{ role: "system", content: "Isto é um follow-up. Responda de forma direta e concisa." }] : [])

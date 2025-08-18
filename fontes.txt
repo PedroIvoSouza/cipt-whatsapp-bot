@@ -22,7 +22,7 @@ R: Para visitantes, o uso do estacionamento ocorre mediante identificação na p
 # ===============================================
 
 P: Qual a capacidade e o custo para alugar o auditório?
-R: O auditório possui 313 poltronas, mas a capacidade máxima pode chegar a 415 pessoas com o aluguel de cadeiras extras (não incluso no valor). Valores das diárias e datas podem ser consultadas através do contato que será enviado e através do email supcti@secti.al.gov.br
+R: O auditório possui 313 poltronas, mas a capacidade máxima pode chegar a 415 pessoas com o aluguel de cadeiras extras (não incluso no valor). Valores das diárias e datas podem ser consultadas através do contato que será enviado, pelo e-mail supcti@secti.al.gov.br ou no site secti.al.gov.br
 
 P: Existe algum desconto para o aluguel do auditório?
 R: Sim. Para aluguéis de múltiplos dias consecutivos, há um desconto progressivo de 20% por diária, do segundo até o quinto dia. Além disso, as empresas instaladas no CIPT (permissionários) têm um desconto fixo de 60% sobre o valor da diária base.
@@ -80,7 +80,7 @@ P: Para que meus dados são usados?
 R: Seus dados são usados para finalidades como identificação e autorização de acesso ao prédio, prevenção a fraudes, comunicação sobre eventos e cumprimento de obrigações legais.
 
 P: Quem é o responsável pela proteção dos meus dados no CIPT?
-R: O Encarregado de Proteção de Dados (DPO) é o Superintendente de Ciência, Tecnologia e Inovação. Em caso de dúvidas sobre seus dados, você pode contatá-lo pelo e-mail: supcti@secti.al.gov.br.
+R: O Encarregado de Proteção de Dados (DPO) é o Superintendente de Ciência, Tecnologia e Inovação. Em caso de dúvidas sobre seus dados, você pode contatá-lo pelo e-mail supcti@secti.al.gov.br ou pelo site secti.al.gov.br.
 
 ===============================================
 Restaurante Portuá
