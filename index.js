@@ -8,6 +8,7 @@ global.crypto = crypto;
 const express = require('express');
 const dotenv = require('dotenv');
 const fs = require('fs');
+const path = require('path');
 const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
@@ -33,7 +34,18 @@ const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
 
 // --- DB (read-only) para consultar Permissionários/DARs --------------------
-const DB_PATH = process.env.DB_PATH || './sistemacipt.db';
+const defaultDbPath = path.join(__dirname, 'sistemacipt.db');
+const DB_PATH = process.env.DB_PATH || defaultDbPath;
+if (!fs.existsSync(DB_PATH)) {
+  console.error(`❌ Arquivo de banco de dados não encontrado: ${DB_PATH}`);
+  process.exit(1);
+}
+try {
+  fs.accessSync(DB_PATH, fs.constants.R_OK);
+} catch (e) {
+  console.error(`❌ Sem permissão de leitura para o banco de dados: ${DB_PATH}`);
+  process.exit(1);
+}
 const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
   if (err) console.error('❌ ERRO abrindo SQLite no bot:', err.message);
   else console.log('🗄️  SQLite (read-only) conectado no bot:', DB_PATH);
