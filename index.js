@@ -49,13 +49,16 @@ const todayISO = () => new Date().toISOString().slice(0,10);
 
 // Detecta existência de telefone_cobranca para ampliar o match
 let TEM_COL_TEL_COBRANCA = false;
-(async () => {
+async function verificarColunaTelefoneCobranca() {
   try {
     const cols = await dbAll(`PRAGMA table_info(permissionarios)`);
-    TEM_COL_TEL_COBRANCA = cols.some(c => (c.name||'').toLowerCase() === 'telefone_cobranca');
+    TEM_COL_TEL_COBRANCA = cols.some(c => (c.name || '').toLowerCase() === 'telefone_cobranca');
     console.log('☎️  Coluna telefone_cobranca existe?', TEM_COL_TEL_COBRANCA);
-  } catch(e) { console.warn('PRAGMA table_info falhou:', e.message); }
-})();
+  } catch (e) {
+    TEM_COL_TEL_COBRANCA = false;
+    console.warn('PRAGMA table_info falhou:', e.message);
+  }
+}
 
 async function findPermissionarioByWhatsAppJid(jid){
   const digits = onlyDigits(jid.split('@')[0]); // ex.: 55829...
@@ -546,6 +549,7 @@ async function startBot() {
 
 async function main() {
   await gerarOuCarregarEmbeddings();
+  await verificarColunaTelefoneCobranca();
   const wSock = await startBot();
   
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
