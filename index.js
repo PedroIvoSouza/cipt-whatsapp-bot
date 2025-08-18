@@ -1,6 +1,5 @@
 // =================================================================================================
-// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (COMPLETA E VERIFICADA)
-// Contém todas as funcionalidades, incluindo roteamento, relatórios e timers.
+// CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (COM D.A.R. via WhatsApp)
 // =================================================================================================
 
 const crypto = require("node:crypto");
@@ -15,6 +14,7 @@ const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whis
 const OpenAI = require('openai');
 const fetch = require('node-fetch');
 const cron = require('node-cron');
+const sqlite3 = require('sqlite3').verbose(); // <- NOVO
 const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado, verificarChamadosAbertos } = require("./sheetsChamados");
 
@@ -32,7 +32,87 @@ let sock;
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
 
-// --- CONTROLE DE SESSÕES E ESTADO ---
+// --- DB (read-only) para consultar Permissionários/DARs --------------------
+const DB_PATH = process.env.DB_PATH || './sistemacipt.db';
+const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
+  if (err) console.error('❌ ERRO abrindo SQLite no bot:', err.message);
+  else console.log('🗄️  SQLite (read-only) conectado no bot:', DB_PATH);
+});
+const dbAll = (sql, params=[]) => new Promise((resolve, reject) => {
+  db.all(sql, params, (e, rows) => e ? reject(e) : resolve(rows));
+});
+const dbGet = (sql, params=[]) => new Promise((resolve, reject) => {
+  db.get(sql, params, (e, row) => e ? reject(e) : resolve(row));
+});
+const onlyDigits = (v='') => String(v).replace(/\D/g,'');
+const todayISO = () => new Date().toISOString().slice(0,10);
+
+// Detecta existência de telefone_cobranca para ampliar o match
+let TEM_COL_TEL_COBRANCA = false;
+(async () => {
+  try {
+    const cols = await dbAll(`PRAGMA table_info(permissionarios)`);
+    TEM_COL_TEL_COBRANCA = cols.some(c => (c.name||'').toLowerCase() === 'telefone_cobranca');
+    console.log('☎️  Coluna telefone_cobranca existe?', TEM_COL_TEL_COBRANCA);
+  } catch(e) { console.warn('PRAGMA table_info falhou:', e.message); }
+})();
+
+async function findPermissionarioByWhatsAppJid(jid){
+  const digits = onlyDigits(jid.split('@')[0]); // ex.: 55829...
+  const cols = `id, nome_empresa, telefone` + (TEM_COL_TEL_COBRANCA ? `, telefone_cobranca` : ``);
+  const rows = await dbAll(`SELECT ${cols} FROM permissionarios`);
+  return rows.find(r => {
+    const t1 = onlyDigits(r.telefone || '');
+    const t2 = onlyDigits(TEM_COL_TEL_COBRANCA ? (r.telefone_cobranca || '') : '');
+    return (t1 && t1 === digits) || (t2 && t2 === digits);
+  }) || null;
+}
+
+async function listarDARsVencidas(permissionarioId){
+  const sql = `
+    SELECT id, mes_referencia, ano_referencia, valor, data_vencimento, status, linha_digitavel, pdf_url
+      FROM dars
+     WHERE permissionario_id = ?
+       AND status <> 'Pago'
+       AND date(data_vencimento) < date(?)
+  ORDER BY date(data_vencimento) ASC`;
+  return dbAll(sql, [permissionarioId, todayISO()]);
+}
+
+async function obterDARVigente(permissionarioId){
+  const sql = `
+    SELECT id, mes_referencia, ano_referencia, valor, data_vencimento, status, linha_digitavel, pdf_url
+      FROM dars
+     WHERE permissionario_id = ?
+       AND status <> 'Pago'
+       AND date(data_vencimento) >= date(?)
+  ORDER BY date(data_vencimento) ASC
+     LIMIT 1`;
+  return dbGet(sql, [permissionarioId, todayISO()]);
+}
+
+function montarLinkPDF(pdf_url){
+  if (!pdf_url) return null;
+  if (/^https?:\/\//i.test(pdf_url)) return pdf_url;
+  const base = (process.env.ADMIN_PUBLIC_BASE || '').replace(/\/$/, '');
+  const rel = String(pdf_url).replace(/^\/?/, '');
+  return base ? `${base}/${rel}` : null;
+}
+
+function formatarDAR(d){
+  const competencia = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
+  const venc = new Date(d.data_vencimento).toLocaleDateString('pt-BR');
+  const valor = Number(d.valor||0).toFixed(2).replace('.', ',');
+  const link = montarLinkPDF(d.pdf_url);
+  return (
+    `• Comp.: ${competencia} | Venc.: ${venc}\n` +
+    `  Valor: R$ ${valor}\n` +
+    (d.linha_digitavel ? `  Linha digitável: ${d.linha_digitavel}\n` : '') +
+    (link ? `  Baixar: ${link}` : `  PDF ainda não disponível`)
+  );
+}
+
+// --- CONTROLE DE SESSÕES E ESTADO -----------------------------------------
 const usuariosAtivos = {};
 const timersEncerramento = {};
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
@@ -61,8 +141,7 @@ const equipeSuporteJids = [
     '558299992881@s.whatsapp.net', // Pedro Ivo
 ];
 
-// --- FUNÇÕES AUXILIARES ---
-
+// --- FUNÇÕES AUXILIARES EXISTENTES ----------------------------------------
 async function gerarOuCarregarEmbeddings() {
   console.log(`ℹ️ Verificando cache de embeddings em: ${embeddingsPath}`);
   try {
@@ -168,15 +247,15 @@ function salvarLog(nome, pergunta) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function enviarRelatorioDePendencias(sock) {
-  if (!sock || !GRUPO_SUPORTE_JID) {
+async function enviarRelatorioDePendencias(sockInstancia) {
+  if (!sockInstancia || !GRUPO_SUPORTE_JID) {
     console.log("[RELATÓRIO] Bot não conectado ou grupo não definido.");
     return;
   }
   const chamadosAbertos = await verificarChamadosAbertos();
   if (chamadosAbertos.length === 0) {
     const mensagem = "📈 *Relatório de Chamados*\n\nNenhum chamado pendente no momento. Bom trabalho, equipe! ✅";
-    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
+    await sockInstancia.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
     return;
   }
   const contagemPorResponsavel = {};
@@ -191,10 +270,10 @@ async function enviarRelatorioDePendencias(sock) {
     mensagem += `\n- ${nome}: ${count} chamado(s) pendente(s)`;
   }
   mensagem += "\n\nPor favor, atualizem os status respondendo aos alertas no grupo. Vamos zerar essa fila! 💪";
-  await sock.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
+  await sockInstancia.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
 }
 
-// --- LÓGICA PRINCIPAL DO BOT ---
+// --- LÓGICA PRINCIPAL DO BOT ----------------------------------------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   sock = makeWASocket({ auth: state });
@@ -202,7 +281,7 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
+    if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
       const error = lastDisconnect?.error?.output?.statusCode;
@@ -221,38 +300,98 @@ async function startBot() {
     const isGroup = jid.endsWith('@g.us');
     const nomeContato = msg.pushName || "Usuário";
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-    const pergunta = corpoMensagem.trim(); // Mantém o case para o protocolo
+    const pergunta = corpoMensagem.trim(); // mantém case quando necessário
 
-    // ✅ NOVA LÓGICA DE COMANDO PRIVADO (Formato: CH-12345 - 1)
-    if (!isGroup && equipeSuporteJids.includes(jid)) {
-        const matchComando = pergunta.match(/^(CH-\d+)\s*-\s*(\d)$/i);
-        if (matchComando) {
-            const protocolo = matchComando[1].toUpperCase();
-            const comando = matchComando[2];
-            const responsavel = nomeContato;
-            const telefoneResponsavel = jid;
-            let novoStatus = "";
+    // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
+    const textoLow = (corpoMensagem || '').toLowerCase();
+    if (!(isGroup && !textoLow.includes('@bot'))) {
+      const pedeDAR = /\b(dar|boleto|2.?via|segunda via)\b/i.test(textoLow);
+      const pedeVencidas = /vencid|atrasad|pendent/i.test(textoLow);
+      const pedeVigente  = /vigent|atual|corrente|m[eê]s/i.test(textoLow);
 
-            if (comando === "1") novoStatus = "Em Atendimento";
-            else if (comando === "2") novoStatus = "Concluído";
-            else if (comando === "3") novoStatus = "Rejeitado";
+      if (pedeDAR || pedeVencidas || pedeVigente) {
+        try {
+          const perm = await findPermissionarioByWhatsAppJid(jid);
+          if (!perm) {
+            await sock.sendMessage(jid, { text:
+              "Não localizei seu cadastro pelo número deste WhatsApp.\n" +
+              "Fale com a administração para atualizar seu telefone (principal ou de cobrança)."
+            });
+            return;
+          }
+          let partes = [];
 
-            if (novoStatus) {
-                const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel, telefoneResponsavel);
-                const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
-
-                await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado *${protocolo}* atualizado para *${novoStatus}* com sucesso.` });
-
-                if (GRUPO_SUPORTE_JID) {
-                    const logGrupo = `[LOG] O status do chamado *${protocolo}* foi atualizado para *${novoStatus}* por ${responsavel}.`;
-                    await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
-                }
-                if (usuarioJid) {
-                    await sock.sendMessage(usuarioJid, { text: `O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
-                }
-                return;
+          if (pedeVencidas || (pedeDAR && !pedeVigente)) {
+            const vencidas = await listarDARsVencidas(perm.id);
+            if (vencidas.length) {
+              partes.push(`🔻 *DARs vencidas* (${vencidas.length}):`);
+              for (const d of vencidas.slice(0, 10)) partes.push(formatarDAR(d));
+              if (vencidas.length > 10) partes.push(`(+${vencidas.length - 10} outras)`);
+            } else {
+              partes.push('✅ Você não possui DARs vencidas.');
             }
+          }
+
+          if (pedeVigente || pedeDAR) {
+            const vigente = await obterDARVigente(perm.id);
+            if (vigente) {
+              partes.push(`🔷 *DAR vigente*\n${formatarDAR(vigente)}`);
+            } else if (!pedeVencidas) {
+              partes.push('ℹ️ Nenhuma DAR vigente encontrada.');
+            }
+          }
+
+          if (!partes.length) {
+            partes = [
+              `Olá, *${perm.nome_empresa}* 👋`,
+              `Envie uma das opções:`,
+              `• _DAR_ — lista vigente e vencidas`,
+              `• _DAR vigente_ — apenas a atual`,
+              `• _DAR vencidas_ — apenas as atrasadas`,
+            ];
+          }
+
+          await sock.sendMessage(jid, { text: partes.join('\n\n') });
+          return; // não segue para IA neste fluxo
+        } catch (e) {
+          console.error('❌ Erro ao processar DAR via WhatsApp:', e.message);
+          await sock.sendMessage(jid, { text: "Tive um problema ao consultar suas DARs agora. Tente novamente em instantes." });
+          return;
         }
+      }
+    }
+    // === FIM BLOCO DARs ===
+
+    // ✅ Comando privado de status (CH-12345 - 1)
+    if (!isGroup && equipeSuporteJids.includes(jid)) {
+      const matchComando = pergunta.match(/^(CH-\d+)\s*-\s*(\d)$/i);
+      if (matchComando) {
+          const protocolo = matchComando[1].toUpperCase();
+          const comando = matchComando[2];
+          const responsavel = nomeContato;
+          const telefoneResponsavel = jid;
+          let novoStatus = "";
+
+          if (comando === "1") novoStatus = "Em Atendimento";
+          else if (comando === "2") novoStatus = "Concluído";
+          else if (comando === "3") novoStatus = "Rejeitado";
+
+          if (novoStatus) {
+              const usuarioJid = await atualizarStatusChamado(protocolo, novoStatus, responsavel, telefoneResponsavel);
+              const statusEmoji = {"Em Atendimento": "📌", "Concluído": "✅", "Rejeitado": "❌"}[novoStatus];
+
+              await sock.sendMessage(jid, { text: `${statusEmoji} Status do chamado *${protocolo}* atualizado para *${novoStatus}* com sucesso.` });
+
+              if (GRUPO_SUPORTE_JID) {
+                  const logGrupo = `[LOG] O status do chamado *${protocolo}* foi atualizado para *${novoStatus}* por ${responsavel}.`;
+                  await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
+              }
+              if (usuarioJid) {
+                  await sock.sendMessage(usuarioJid, { text: `O status do seu chamado de protocolo *${protocolo}* foi atualizado para *${novoStatus}*.` });
+              }
+              return;
+          }
+      }
     }
     
     const perguntaNormalizada = corpoMensagem.toLowerCase().trim().replace(/@bot/gi, "");
@@ -283,7 +422,6 @@ async function startBot() {
     try {
       if (usuariosAtivos[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
-          // ... (lógica de registro de chamado)
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           const sucesso = await registrarChamado({
             protocolo, nome: nomeContato, telefone: jid.split("@")[0],
@@ -301,7 +439,6 @@ async function startBot() {
               await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
               if (responsaveis.length > 0) {
                 for (const responsavel of responsaveis) {
-                  // ✅ NOVA MENSAGEM DE NOTIFICAÇÃO
                   const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuariosAtivos[jid].chamadoPendente.categoria}\n*Descrição:* ${usuariosAtivos[jid].chamadoPendente.descricao}\n\nPara atualizar, responda a esta mensagem com o número do chamado + um dos comandos:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado\n\n*Exemplo:*\n${protocolo} - 1`;
                   await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
                 }
@@ -310,7 +447,7 @@ async function startBot() {
           } else {
             await sock.sendMessage(jid, { text: `😥 Desculpe, não consegui registrar seu chamado na planilha, mas já notifiquei a equipe sobre o problema. Por favor, aguarde.` });
             if (GRUPO_SUPORTE_JID) {
-              await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `🚨 *ATENÇÃO, EQUIPE!* Falha ao registrar o chamado de ${nomeContato} na planilha. Verifiquem os logs. Descrição: "${chamadoPendente.descricao}"` });
+              await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `🚨 *ATENÇÃO, EQUIPE!* Falha ao registrar o chamado de ${nomeContato} na planilha. Verifiquem os logs.` });
             }
           }
           delete usuariosAtivos[jid].chamadoPendente;
@@ -394,11 +531,13 @@ async function startBot() {
       await sock.sendMessage(jid, { text: "Peço desculpas, ocorreu um erro interno. Tente novamente." });
     }
   });
+
+  return sock; // <- garante retorno
 }
 
 async function main() {
   await gerarOuCarregarEmbeddings();
-  const sock = await startBot();
+  const wSock = await startBot();
   
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
@@ -410,7 +549,7 @@ async function main() {
       console.log("⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.");
       cron.schedule('30 11,16 * * 1-5', () => {
         console.log('[CRON] Executando verificação de chamados pendentes...');
-        enviarRelatorioDePendencias(sock);
+        enviarRelatorioDePendencias(wSock);
       }, {
         scheduled: true,
         timezone: "America/Maceio"
@@ -421,4 +560,4 @@ async function main() {
 
 main();
 
-// LÓGICA DE DESLIGAMENTO GRACIOSO REMOVIDA
+// (sem lógica de desligamento gracioso)
