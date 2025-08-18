@@ -255,8 +255,24 @@ async function startBot() {
     const perguntaNormalizada = corpoMensagem.toLowerCase().trim().replace(/@bot/gi, "");
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
     if (!perguntaNormalizada) return;
-
     salvarLog(nomeContato, perguntaNormalizada);
+
+    // 📄 Envio do regimento interno em PDF, se solicitado
+    if (perguntaNormalizada.includes('regimento interno') || perguntaNormalizada.includes('regimento')) {
+      const linkRegimento = 'https://drive.google.com/uc?export=download&id=109UcJEbPqKng93fKUA0osewehd5ivElH';
+      try {
+        await sock.sendMessage(jid, {
+          document: fs.createReadStream('regimento.pdf'),
+          mimetype: 'application/pdf',
+          fileName: 'Regimento Interno CIPT.pdf'
+        });
+      } catch (err) {
+        console.error('❌ Erro ao enviar regimento local:', err.message);
+        await sock.sendMessage(jid, { text: `Você pode baixar o regimento interno aqui: ${linkRegimento}` });
+      }
+      return;
+    }
+
     const agora = Date.now();
     await sock.sendPresenceUpdate('composing', jid);
     await delay(1500);
