@@ -60,12 +60,21 @@ let TEM_COL_TEL_COBRANCA = false;
 async function findPermissionarioByWhatsAppJid(jid){
   const digits = onlyDigits(jid.split('@')[0]); // ex.: 55829...
   const cols = `id, nome_empresa, telefone` + (TEM_COL_TEL_COBRANCA ? `, telefone_cobranca` : ``);
-  const rows = await dbAll(`SELECT ${cols} FROM permissionarios`);
-  return rows.find(r => {
-    const t1 = onlyDigits(r.telefone || '');
-    const t2 = onlyDigits(TEM_COL_TEL_COBRANCA ? (r.telefone_cobranca || '') : '');
-    return (t1 && t1 === digits) || (t2 && t2 === digits);
-  }) || null;
+
+  // Remove caracteres não numéricos em SQL para comparação
+  const clean = (field) =>
+    `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(${field},''),'.',''),'-',''),' ',''),'(',''),')','')`;
+
+  let sql = `SELECT ${cols} FROM permissionarios WHERE ${clean('telefone')} = ?`;
+  const params = [digits];
+
+  if (TEM_COL_TEL_COBRANCA) {
+    sql += ` OR ${clean('telefone_cobranca')} = ?`;
+    params.push(digits);
+  }
+
+  sql += ' LIMIT 1';
+  return dbGet(sql, params);
 }
 
 async function listarDARsVencidas(permissionarioId){
