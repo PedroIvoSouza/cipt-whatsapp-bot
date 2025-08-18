@@ -113,7 +113,8 @@ function formatarDAR(d){
 }
 
 // --- CONTROLE DE SESSÕES E ESTADO -----------------------------------------
-const usuariosAtivos = {};
+// Estrutura: { [jid]: { lastActive: number, chamadoPendente?: { descricao, categoria } } }
+const usuarios = {};
 const timersEncerramento = {};
 const TEMPO_ENCERRAMENTO = 5 * 60 * 1000;
 const historicoUsuarios = {};
@@ -416,30 +417,31 @@ async function startBot() {
     }
 
     const agora = Date.now();
+    usuarios[jid] = { ...(usuarios[jid] || {}), lastActive: agora };
     await sock.sendPresenceUpdate('composing', jid);
     await delay(1500);
 
     try {
-      if (usuariosAtivos[jid]?.chamadoPendente) {
+      if (usuarios[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
           const sucesso = await registrarChamado({
             protocolo, nome: nomeContato, telefone: jid.split("@")[0],
-            descricao: usuariosAtivos[jid].chamadoPendente.descricao, 
-            categoria: usuariosAtivos[jid].chamadoPendente.categoria,
+            descricao: usuarios[jid].chamadoPendente.descricao,
+            categoria: usuarios[jid].chamadoPendente.categoria,
             status: "Aberto", usuarioJid: jid
           });
           
           if (sucesso) {
-            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuariosAtivos[jid].chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
+            await sock.sendMessage(jid, { text: `✅ Chamado registrado com sucesso!\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuarios[jid].chamadoPendente.categoria}\n\nA equipe de suporte já foi notificada.` });
             if (GRUPO_SUPORTE_JID) {
-              const responsaveis = routingMap[usuariosAtivos[jid].chamadoPendente.categoria] || [];
+              const responsaveis = routingMap[usuarios[jid].chamadoPendente.categoria] || [];
               let nomesResponsaveis = responsaveis.map(r => r.nome).join(' e ');
-              const logGrupo = `[LOG] Novo chamado de *${usuariosAtivos[jid].chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
+              const logGrupo = `[LOG] Novo chamado de *${usuarios[jid].chamadoPendente.categoria}* (CH-${protocolo}). Notificação enviada para: ${nomesResponsaveis}.`;
               await sock.sendMessage(GRUPO_SUPORTE_JID, { text: logGrupo });
               if (responsaveis.length > 0) {
                 for (const responsavel of responsaveis) {
-                  const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuariosAtivos[jid].chamadoPendente.categoria}\n*Descrição:* ${usuariosAtivos[jid].chamadoPendente.descricao}\n\nPara atualizar, responda a esta mensagem com o número do chamado + um dos comandos:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado\n\n*Exemplo:*\n${protocolo} - 1`;
+                  const notificacaoPrivada = `🔔 *Nova atribuição de chamado para você.*\n\n*Protocolo:* ${protocolo}\n*Categoria:* ${usuarios[jid].chamadoPendente.categoria}\n*Descrição:* ${usuarios[jid].chamadoPendente.descricao}\n\nPara atualizar, responda a esta mensagem com o número do chamado + um dos comandos:\n1 - Em Atendimento\n2 - Concluído\n3 - Rejeitado\n\n*Exemplo:*\n${protocolo} - 1`;
                   await sock.sendMessage(responsavel.jid, { text: notificacaoPrivada });
                 }
               }
@@ -450,18 +452,18 @@ async function startBot() {
               await sock.sendMessage(GRUPO_SUPORTE_JID, { text: `🚨 *ATENÇÃO, EQUIPE!* Falha ao registrar o chamado de ${nomeContato} na planilha. Verifiquem os logs.` });
             }
           }
-          delete usuariosAtivos[jid].chamadoPendente;
+          delete usuarios[jid].chamadoPendente;
           return;
         } else if (perguntaNormalizada === "não" || perguntaNormalizada === "nao") {
           await sock.sendMessage(jid, { text: "Ok, o registro do chamado foi cancelado." });
-          delete usuariosAtivos[jid].chamadoPendente;
+          delete usuarios[jid].chamadoPendente;
           return;
         }
       }
 
       const classificacao = await classificarChamado(perguntaNormalizada);
       if (classificacao.ehChamado === "SIM") {
-        usuariosAtivos[jid] = { ...usuariosAtivos[jid], chamadoPendente: { descricao: corpoMensagem, categoria: classificacao.categoria } };
+        usuarios[jid] = { ...(usuarios[jid] || {}), chamadoPendente: { descricao: corpoMensagem, categoria: classificacao.categoria } };
         await sock.sendMessage(jid, { text: `Identifiquei que sua mensagem parece ser uma solicitação de suporte. Confirma o registro do chamado abaixo?\n\n*Descrição:* _${corpoMensagem}_\n*Categoria Sugerida:* ${classificacao.categoria}\n\nResponda com *"Sim"* para confirmar ou *"Não"* para cancelar.` });
         return;
       }
@@ -505,7 +507,7 @@ async function startBot() {
       if(!despedidas.includes(perguntaNormalizada)) {
         resposta += gerarSugestoes();
       } else {
-         delete usuariosAtivos[jid];
+         delete usuarios[jid];
          if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
          delete timersEncerramento[jid];
          delete historicoUsuarios[jid];
@@ -514,12 +516,12 @@ async function startBot() {
       
       await sock.sendMessage(jid, { text: resposta });
 
-      usuariosAtivos[jid] = agora;
+      usuarios[jid].lastActive = agora;
       if (timersEncerramento[jid]) clearTimeout(timersEncerramento[jid]);
       timersEncerramento[jid] = setTimeout(async () => {
-        if (Date.now() - (usuariosAtivos[jid] || 0) >= TEMPO_ENCERRAMENTO) {
+        if (!usuarios[jid] || Date.now() - usuarios[jid].lastActive >= TEMPO_ENCERRAMENTO) {
           await sock.sendMessage(jid, { text: "Este atendimento foi encerrado por inatividade. Se precisar de algo mais, é só me chamar! 👋" });
-          delete usuariosAtivos[jid];
+          delete usuarios[jid];
           delete timersEncerramento[jid];
           delete historicoUsuarios[jid];
           delete contatosEnviados[jid];
