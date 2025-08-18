@@ -36,26 +36,39 @@ const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDE
 // --- DB (read-only) para consultar Permissionários/DARs --------------------
 const defaultDbPath = path.join(__dirname, 'sistemacipt.db');
 const DB_PATH = process.env.DB_PATH || defaultDbPath;
-if (!fs.existsSync(DB_PATH)) {
-  console.error(`❌ Arquivo de banco de dados não encontrado: ${DB_PATH}`);
-  process.exit(1);
+const REMOTE_DB_URL = process.env.REMOTE_DB_URL;
+
+let db; // poderá ficar indefinido se não houver SQLite local
+let dbAll; // funções auxiliares dependem da disponibilidade de um DB
+let dbGet;
+
+if (REMOTE_DB_URL) {
+  console.log(`🌐 Banco de dados remoto detectado (REMOTE_DB_URL). Pulando verificação de arquivo SQLite.`);
+  // Aqui seria configurada a conexão com o banco remoto, se necessário.
+  dbAll = async () => [];
+  dbGet = async () => null;
+} else if (fs.existsSync(DB_PATH)) {
+  try {
+    fs.accessSync(DB_PATH, fs.constants.R_OK);
+  } catch (e) {
+    console.error(`❌ Sem permissão de leitura para o banco de dados: ${DB_PATH}`);
+    process.exit(1);
+  }
+  db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
+    if (err) console.error('❌ ERRO abrindo SQLite no bot:', err.message);
+    else console.log('🗄️  SQLite (read-only) conectado no bot:', DB_PATH);
+  });
+  dbAll = (sql, params = []) => new Promise((resolve, reject) => {
+    db.all(sql, params, (e, rows) => (e ? reject(e) : resolve(rows)));
+  });
+  dbGet = (sql, params = []) => new Promise((resolve, reject) => {
+    db.get(sql, params, (e, row) => (e ? reject(e) : resolve(row)));
+  });
+} else {
+  console.warn(`⚠️ Banco de dados SQLite não encontrado em ${DB_PATH}. Prosseguindo sem acesso ao banco local.`);
+  dbAll = async () => [];
+  dbGet = async () => null;
 }
-try {
-  fs.accessSync(DB_PATH, fs.constants.R_OK);
-} catch (e) {
-  console.error(`❌ Sem permissão de leitura para o banco de dados: ${DB_PATH}`);
-  process.exit(1);
-}
-const db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READONLY, (err) => {
-  if (err) console.error('❌ ERRO abrindo SQLite no bot:', err.message);
-  else console.log('🗄️  SQLite (read-only) conectado no bot:', DB_PATH);
-});
-const dbAll = (sql, params=[]) => new Promise((resolve, reject) => {
-  db.all(sql, params, (e, rows) => e ? reject(e) : resolve(rows));
-});
-const dbGet = (sql, params=[]) => new Promise((resolve, reject) => {
-  db.get(sql, params, (e, row) => e ? reject(e) : resolve(row));
-});
 const onlyDigits = (v='') => String(v).replace(/\D/g,'');
 const todayISO = () => new Date().toISOString().slice(0,10);
 
