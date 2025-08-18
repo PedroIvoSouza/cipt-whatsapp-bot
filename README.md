@@ -1,6 +1,7 @@
 # CIPT WhatsApp Bot
 
 O bot utiliza um arquivo SQLite chamado `sistemacipt.db` para consultar permissionários e D.A.R.s.
+Caso você utilize um banco remoto ou não necessite da funcionalidade de pagamentos, essa verificação pode ser ignorada.
 
 ## Banco de dados
 
@@ -14,6 +15,11 @@ O bot utiliza um arquivo SQLite chamado `sistemacipt.db` para consultar permissi
   ls -l "$DB_PATH"
   ```
   Ajuste as permissões conforme necessário usando `chmod` ou `chown`.
+- Para usar um serviço de banco de dados remoto ou outro tipo de armazenamento, defina `REMOTE_DB_URL` com a URL/DSN correspondente. Quando essa variável estiver presente, o bot não tentará abrir o arquivo SQLite local e iniciará normalmente.
+  ```bash
+  export REMOTE_DB_URL=https://meu-banco-remoto
+  ```
+  Caso nenhuma fonte de dados seja encontrada, o bot continuará em execução, mas as consultas de pagamento ficarão indisponíveis.
 
 ## Executando
 
