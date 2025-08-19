@@ -438,6 +438,13 @@ async function startBot() {
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
     const pergunta = corpoMensagem.trim(); // mantém case quando necessário
 
+    if ((usuarios[jid]?.opcoesDar || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
+      delete usuarios[jid].opcoesDar;
+      delete usuarios[jid].aguardandoConfirmacaoDar;
+      await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
+      return;
+    }
+
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
     const textoLow = (corpoMensagem || '').toLowerCase();
     if (!(isGroup && !textoLow.includes('@bot'))) {
