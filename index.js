@@ -166,35 +166,61 @@ function formatDarLine(d){
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
   return `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
 }
-async function montarTextoResposta(msisdn, payload){
+async function montarTextoResposta(msisdn, payload, {
+  offsetVig = 0,
+  offsetVenc = 0,
+  limit = 2,
+  greeting = true
+} = {}){
   const linhas = [];
   const mapa = {};
-  let contador = 1;
+  let contador = 1 + offsetVig + offsetVenc;
+
   if (payload.permissionario){ // payload legado
     const nome = payload.permissionario.nome_empresa;
-    linhas.push(`Olá, *${nome}*! Aqui estão suas DARs:`);
-    if (payload.dars.vigente){
-      linhas.push('🔷 *DAR vigente*');
-      const txt = formatDarLine(payload.dars.vigente);
-      linhas.push(txt.replace(/^•/, `${contador})`));
-      mapa[contador++] = { id: payload.dars.vigente.id, resumo: darResumo(payload.dars.vigente) };
-    } else {
-      linhas.push('🔷 *DAR vigente*: nenhuma.');
+    if (greeting && offsetVig === 0 && offsetVenc === 0){
+      linhas.push(`Olá, *${nome}*! Aqui estão suas DARs:`);
     }
-    const vencidas = payload.dars.vencidas || [];
-    if (vencidas.length){
-      linhas.push(`\n🔻 *DARs vencidas* (${vencidas.length}):`);
-      for (const d of vencidas.slice(0,10)) {
-        const txt = formatDarLine(d);
+    const vigentesArr = payload.dars.vigentes || (payload.dars.vigente ? [payload.dars.vigente] : []);
+    if (vigentesArr.length){
+      linhas.push('🔷 *DARs vigentes*');
+      let mostradasVig = 0;
+      for (const d of vigentesArr.slice(offsetVig, offsetVig + limit)) {
+        const txt = await formatDarLine(msisdn, d);
         linhas.push(txt.replace(/^•/, `${contador})`));
         mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+        mostradasVig++;
       }
-      if (vencidas.length > 10) linhas.push(`(+${vencidas.length-10} outras)`);
-    } else {
+      const restVig = vigentesArr.length - (offsetVig + mostradasVig);
+      if (restVig > 0){
+        linhas.push(`(+${restVig} outras) – responda 'mais' para ver todas`);
+      }
+      offsetVig += mostradasVig;
+    } else if (offsetVig === 0){
+      linhas.push('🔷 *DAR vigente*: nenhuma.');
+    }
+
+    const vencidasArr = payload.dars.vencidas || [];
+    if (vencidasArr.length){
+      linhas.push(`\n🔻 *DARs vencidas*`);
+      let mostradasVenc = 0;
+      for (const d of vencidasArr.slice(offsetVenc, offsetVenc + limit)) {
+        const txt = await formatDarLine(msisdn, d);
+        linhas.push(txt.replace(/^•/, `${contador})`));
+        mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+        mostradasVenc++;
+      }
+      const restVenc = vencidasArr.length - (offsetVenc + mostradasVenc);
+      if (restVenc > 0){
+        linhas.push(`(+${restVenc} outras) – responda 'mais' para ver todas`);
+      }
+      offsetVenc += mostradasVenc;
+    } else if (offsetVenc === 0){
       linhas.push('✅ Sem DARs vencidas.');
     }
-    return { texto: linhas.join('\n'), mapa };
+    return { texto: linhas.join('\n'), mapa, mostradas: { vig: offsetVig, venc: offsetVenc } };
   }
+
   if (Array.isArray(payload.contas) && payload.contas.length){
     linhas.push('Encontrei estes cadastros vinculados ao seu número:');
     for (const conta of payload.contas){
@@ -202,23 +228,33 @@ async function montarTextoResposta(msisdn, payload){
         ? `🎫 *Cliente de Eventos:* ${conta.nome}`
         : `🏢 *Permissionário:* ${conta.nome}`;
       linhas.push(cab);
-      if (conta.dars.vigente){
-        linhas.push('  🔷 *DAR vigente*');
-        const txt = formatDarLine(conta.dars.vigente);
-        linhas.push(txt.replace(/^•/, `${contador})`));
-        mapa[contador++] = { id: conta.dars.vigente.id, resumo: darResumo(conta.dars.vigente) };
+      const vigArr = conta.dars.vigentes || (conta.dars.vigente ? [conta.dars.vigente] : []);
+      if (vigArr.length){
+        linhas.push('  🔷 *DARs vigentes*');
+        let mostradasVig = 0;
+        for (const d of vigArr.slice(0,2)) {
+          const txt = await formatDarLine(msisdn, d);
+          linhas.push(txt.replace(/^•/, `${contador})`));
+          mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+          mostradasVig++;
+        }
+        if (vigArr.length > 2){
+          linhas.push(`  (+${vigArr.length-2} outras) – responda 'mais' para ver todas`);
+        }
+
       } else {
         linhas.push('  🔷 *DAR vigente*: nenhuma.');
       }
       const venc = conta.dars.vencidas || [];
       if (venc.length){
-        linhas.push(`  🔻 *DARs vencidas* (${venc.length}):`);
-        for (const d of venc.slice(0,5)) {
-          const txt = formatDarLine(d);
+        linhas.push(`  🔻 *DARs vencidas* (${venc.length})`);
+        for (const d of venc.slice(0,2)) {
+          const txt = await formatDarLine(msisdn, d);
+
           linhas.push(txt.replace(/^•/, `${contador})`));
           mapa[contador++] = { id: d.id, resumo: darResumo(d) };
         }
-        if (venc.length > 5) linhas.push(`  (+${venc.length-5} outras)`);
+        if (venc.length > 2) linhas.push(`  (+${venc.length-2} outras) – responda 'mais' para ver todas`);
       } else {
         linhas.push('  ✅ Sem DARs vencidas.');
       }
@@ -468,6 +504,8 @@ async function startBot() {
     if ((usuarios[jid]?.darMap || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
       delete usuarios[jid].darMap;
       delete usuarios[jid].aguardandoConfirmacaoDar;
+      delete usuarios[jid].darPayload;
+      delete usuarios[jid].darOffsets;
       await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
       return;
     }
@@ -477,9 +515,9 @@ async function startBot() {
     if (!(isGroup && !textoLow.includes('@bot'))) {
       const numeroEscolhido = pergunta.trim();
       if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
-        const darId = usuarios[jid].darMap[numeroEscolhido]?.id;
-
-        if (darId) {
+        const darEntry = usuarios[jid].darMap[numeroEscolhido];
+        if (darEntry) {
+          const darId = typeof darEntry === 'object' ? darEntry.id : darEntry;
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
@@ -501,6 +539,29 @@ async function startBot() {
         } else {
           await sock.sendMessage(jid, { text: 'Opção inválida. Digite um número da lista ou "SAIR" para encerrar.' });
         }
+      } else if (/^mais$/i.test(numeroEscolhido) && usuarios[jid]?.darPayload) {
+        const state = usuarios[jid].darOffsets || { vig: 0, venc: 0 };
+        const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
+        const { texto, mapa, mostradas } = await montarTextoResposta(msisdnBase, usuarios[jid].darPayload, {
+          offsetVig: state.vig,
+          offsetVenc: state.venc,
+          limit: 5,
+          greeting: false
+        });
+        if (mostradas.vig === state.vig && mostradas.venc === state.venc) {
+          await sock.sendMessage(jid, { text: 'Não há mais DARs.' });
+        } else {
+          await sock.sendMessage(jid, { text: texto });
+          usuarios[jid].darOffsets = mostradas;
+          usuarios[jid].darMap = { ...(usuarios[jid].darMap || {}), ...mapa };
+          const totalVig = (usuarios[jid].darPayload.dars.vigentes || (usuarios[jid].darPayload.dars.vigente ? [usuarios[jid].darPayload.dars.vigente] : [])).length;
+          const totalVenc = (usuarios[jid].darPayload.dars.vencidas || []).length;
+          if (mostradas.vig >= totalVig && mostradas.venc >= totalVenc) {
+            delete usuarios[jid].darPayload;
+            delete usuarios[jid].darOffsets;
+          }
+        }
+
 
         return;
       }
@@ -513,10 +574,10 @@ async function startBot() {
         const msisdnOrig = msisdnFromJid(jid);
         try {
           const { data: payload, msisdnCorrigido } = await apiGetDars(msisdnOrig);
-          const { texto, mapa } = await montarTextoResposta(msisdnCorrigido, payload);
-          usuarios[jid] = { ...(usuarios[jid] || {}), darMap: mapa, msisdnCorrigido };
+          const { texto, mapa, mostradas } = await montarTextoResposta(msisdnCorrigido, payload);
+          usuarios[jid] = { ...(usuarios[jid] || {}), darMap: mapa, msisdnCorrigido, darPayload: payload, darOffsets: mostradas };
           await sock.sendMessage(jid, { text: texto });
-          const darEscolhida = payload?.dars?.vigente || (payload?.dars?.vencidas || [])[0];
+          const darEscolhida = (payload?.dars?.vigentes || [])[0] || (payload?.dars?.vencidas || [])[0];
           if (darEscolhida) {
             usuarios[jid] = { ...(usuarios[jid] || {}), darPendente: { id: darEscolhida.id, msisdn: msisdnCorrigido } };
             await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
