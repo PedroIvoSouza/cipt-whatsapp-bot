@@ -525,6 +525,44 @@ async function startBot() {
     await delay(1500);
 
     try {
+      if (usuarios[jid]?.aguardandoConfirmacaoDar) {
+        const escolha = perguntaNormalizada;
+        const darId = usuarios[jid].aguardandoConfirmacaoDar;
+        if (escolha === 'sim') {
+          const msisdn = msisdnFromJid(jid);
+          try {
+            const emit = await apiEmitDar(darId, msisdn);
+            const link = emit.pdf_url || pdfLink(darId, msisdn);
+            let resposta = `DAR ${darId} emitida.`;
+            if (emit.linha_digitavel) resposta += `\nLinha digitável: ${emit.linha_digitavel}`;
+            if (link) resposta += `\nBaixar PDF: ${link}`;
+            await sock.sendMessage(jid, { text: resposta });
+          } catch (e) {
+            await sock.sendMessage(jid, { text: `Falha ao emitir DAR: ${e.message}` });
+          }
+          delete usuarios[jid].aguardandoConfirmacaoDar;
+          return;
+        } else if (escolha === 'nao' || escolha === 'não') {
+          const msisdn = msisdnFromJid(jid);
+          try {
+            const payload = await apiGetDars(msisdn);
+            const texto = await montarTextoResposta(msisdn, payload);
+            await sock.sendMessage(jid, { text: texto });
+          } catch (e) {
+            await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${e.message}` });
+          }
+          delete usuarios[jid].aguardandoConfirmacaoDar;
+          return;
+        } else if (escolha === 'sair') {
+          await sock.sendMessage(jid, { text: 'Ok, até logo.' });
+          delete usuarios[jid].aguardandoConfirmacaoDar;
+          return;
+        } else {
+          await sock.sendMessage(jid, { text: 'Responda com SIM, NÃO ou SAIR.' });
+          return;
+        }
+      }
+
       if (usuarios[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
@@ -562,6 +600,13 @@ async function startBot() {
           delete usuarios[jid].chamadoPendente;
           return;
         }
+      }
+
+      const darNumero = pergunta.match(/^\d{4,}$/);
+      if (darNumero) {
+        usuarios[jid] = { ...(usuarios[jid] || {}), aguardandoConfirmacaoDar: darNumero[0] };
+        await sock.sendMessage(jid, { text: `Confirma emissão da DAR ${darNumero[0]}? Responda com *SIM*, *NÃO* ou *SAIR*.` });
+        return;
       }
 
       const classificacao = await classificarChamado(perguntaNormalizada);
