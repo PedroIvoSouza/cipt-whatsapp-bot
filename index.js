@@ -140,10 +140,6 @@ function pdfLink(darId, msisdn){
   return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
 }
 async function formatDarLine(msisdn, d){
-  // se não tem PDF ainda, tenta emitir
-  if (!d.pdf_url) {
-    try { await apiEmitDar(d.id, msisdn); } catch(e){ /* segue sem travar */ }
-  }
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
   const partes = [
     `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)}`,
@@ -451,6 +447,11 @@ async function startBot() {
           const payload = await apiGetDars(msisdn);
           const texto = await montarTextoResposta(msisdn, payload);
           await sock.sendMessage(jid, { text: texto });
+          const darEscolhida = payload?.dars?.vigente || (payload?.dars?.vencidas || [])[0];
+          if (darEscolhida) {
+            usuarios[jid] = { ...(usuarios[jid] || {}), darPendente: { id: darEscolhida.id, msisdn } };
+            await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
+          }
         } catch (e) {
           const msg = String(e.message || '');
           if (/associado a nenhum/i.test(msg)) {
@@ -525,6 +526,31 @@ async function startBot() {
     await delay(1500);
 
     try {
+      if (usuarios[jid]?.darPendente) {
+        if (perguntaNormalizada === "sim") {
+          const { id, msisdn } = usuarios[jid].darPendente;
+          try {
+            const emissao = await apiEmitDar(id, msisdn);
+            if (emissao.linha_digitavel) {
+              await sock.sendMessage(jid, { text: `Linha digitável: ${emissao.linha_digitavel}` });
+            }
+            if (emissao.pdf_url) {
+              await sock.sendMessage(jid, { document: { url: emissao.pdf_url } });
+            }
+          } catch (e) {
+            await sock.sendMessage(jid, { text: `Não consegui emitir a DAR: ${e.message}` });
+          }
+          delete usuarios[jid].darPendente;
+          return;
+        }
+        if (perguntaNormalizada === "não" || perguntaNormalizada === "nao") {
+          await sock.sendMessage(jid, { text: "Ok, emissão cancelada." });
+          delete usuarios[jid].darPendente;
+          return;
+        }
+        await sock.sendMessage(jid, { text: 'Por favor, responda com "SIM" para emitir ou "NÃO" para cancelar.' });
+        return;
+      }
       if (usuarios[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
