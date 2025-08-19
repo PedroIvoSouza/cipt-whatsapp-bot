@@ -507,7 +507,7 @@ async function startBot() {
           if (/associado a nenhum/i.test(msg)) {
             await sock.sendMessage(jid, { text:
               "Não localizei seu cadastro pelo número deste WhatsApp.\n" +
-              "Fale com a administração para atualizar seu telefone (principal ou de cobrança)."
+              "Atualize seu telefone no portal do permissionário/cliente."
             });
           } else {
             await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${msg}` });
