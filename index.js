@@ -487,9 +487,19 @@ async function startBot() {
         if (darId) {
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
-            const { linha_digitavel, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
+            const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}\nBaixar: ${pdfLink(darId, msisdnCorrigido)}` });
+            const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
+            if (pdfUrl) {
+              await sock.sendMessage(jid, {
+                document: { url: pdfUrl },
+                mimetype: 'application/pdf',
+                fileName: `DAR-${darId}.pdf`
+              });
+            }
+            if (linha_digitavel) {
+              await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}` });
+            }
           } catch (e) {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
@@ -595,12 +605,18 @@ async function startBot() {
         if (escolha === 'sim') {
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
-            const emit = await apiEmitDar(darId, msisdnBase);
-            usuarios[jid].msisdnCorrigido = emit.msisdnCorrigido;
-            const link = emit.pdf_url || pdfLink(darId, emit.msisdnCorrigido);
+            const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
+            usuarios[jid].msisdnCorrigido = msisdnCorrigido;
+            const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
+            if (pdfUrl) {
+              await sock.sendMessage(jid, {
+                document: { url: pdfUrl },
+                mimetype: 'application/pdf',
+                fileName: `DAR-${darId}.pdf`
+              });
+            }
             let resposta = `DAR ${darId} emitida.`;
-            if (emit.linha_digitavel) resposta += `\nLinha digitável: ${emit.linha_digitavel}`;
-            if (link) resposta += `\nBaixar PDF: ${link}`;
+            if (linha_digitavel) resposta += `\nLinha digitável: ${linha_digitavel}`;
             await sock.sendMessage(jid, { text: resposta });
 
           } catch (e) {
