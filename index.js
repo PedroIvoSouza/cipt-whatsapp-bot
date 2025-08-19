@@ -151,24 +151,32 @@ async function formatDarLine(msisdn, d){
 }
 async function montarTextoResposta(msisdn, payload){
   const linhas = [];
+  const mapa = {};
+  let contador = 1;
   if (payload.permissionario){ // payload legado
     const nome = payload.permissionario.nome_empresa;
     linhas.push(`Olá, *${nome}*! Aqui estão suas DARs:`);
     if (payload.dars.vigente){
       linhas.push('🔷 *DAR vigente*');
-      linhas.push(await formatDarLine(msisdn, payload.dars.vigente));
+      const txt = await formatDarLine(msisdn, payload.dars.vigente);
+      linhas.push(txt.replace(/^•/, `${contador})`));
+      mapa[contador++] = payload.dars.vigente.id;
     } else {
       linhas.push('🔷 *DAR vigente*: nenhuma.');
     }
     const vencidas = payload.dars.vencidas || [];
     if (vencidas.length){
       linhas.push(`\n🔻 *DARs vencidas* (${vencidas.length}):`);
-      for (const d of vencidas.slice(0,10)) linhas.push(await formatDarLine(msisdn, d));
+      for (const d of vencidas.slice(0,10)) {
+        const txt = await formatDarLine(msisdn, d);
+        linhas.push(txt.replace(/^•/, `${contador})`));
+        mapa[contador++] = d.id;
+      }
       if (vencidas.length > 10) linhas.push(`(+${vencidas.length-10} outras)`);
     } else {
       linhas.push('✅ Sem DARs vencidas.');
     }
-    return linhas.join('\n');
+    return { texto: linhas.join('\n'), mapa };
   }
   if (Array.isArray(payload.contas) && payload.contas.length){
     linhas.push('Encontrei estes cadastros vinculados ao seu número:');
@@ -179,23 +187,29 @@ async function montarTextoResposta(msisdn, payload){
       linhas.push(cab);
       if (conta.dars.vigente){
         linhas.push('  🔷 *DAR vigente*');
-        linhas.push(await formatDarLine(msisdn, conta.dars.vigente));
+        const txt = await formatDarLine(msisdn, conta.dars.vigente);
+        linhas.push(txt.replace(/^•/, `${contador})`));
+        mapa[contador++] = conta.dars.vigente.id;
       } else {
         linhas.push('  🔷 *DAR vigente*: nenhuma.');
       }
       const venc = conta.dars.vencidas || [];
       if (venc.length){
         linhas.push(`  🔻 *DARs vencidas* (${venc.length}):`);
-        for (const d of venc.slice(0,5)) linhas.push(await formatDarLine(msisdn, d));
+        for (const d of venc.slice(0,5)) {
+          const txt = await formatDarLine(msisdn, d);
+          linhas.push(txt.replace(/^•/, `${contador})`));
+          mapa[contador++] = d.id;
+        }
         if (venc.length > 5) linhas.push(`  (+${venc.length-5} outras)`);
       } else {
         linhas.push('  ✅ Sem DARs vencidas.');
       }
       linhas.push('');
     }
-    return linhas.join('\n');
+    return { texto: linhas.join('\n'), mapa };
   }
-  return 'Não localizei DARs para este número.';
+  return { texto: 'Não localizei DARs para este número.', mapa };
 }
 
 // === Funções locais de consulta (mantidas) =================================
@@ -444,6 +458,21 @@ async function startBot() {
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
     const textoLow = (corpoMensagem || '').toLowerCase();
     if (!(isGroup && !textoLow.includes('@bot'))) {
+      const numeroEscolhido = pergunta.trim();
+      if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
+        const darId = usuarios[jid].darMap[numeroEscolhido];
+        if (darId) {
+          const msisdn = msisdnFromJid(jid);
+          try {
+            const { linha_digitavel } = await apiEmitDar(darId, msisdn);
+            await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}\nBaixar: ${pdfLink(darId, msisdn)}` });
+          } catch (e) {
+            await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
+          }
+          return;
+        }
+      }
+
       const pedeDAR = /\b(dar|boleto|2.?via|segunda via)\b/i.test(textoLow);
       const pedeVencidas = /vencid|atrasad|pendent/i.test(textoLow);
       const pedeVigente  = /vigent|atual|corrente|m[eê]s/i.test(textoLow);
@@ -452,7 +481,8 @@ async function startBot() {
         const msisdn = msisdnFromJid(jid);
         try {
           const payload = await apiGetDars(msisdn);
-          const texto = await montarTextoResposta(msisdn, payload);
+          const { texto, mapa } = await montarTextoResposta(msisdn, payload);
+          usuarios[jid] = { ...(usuarios[jid] || {}), darMap: mapa };
           await sock.sendMessage(jid, { text: texto });
           const darEscolhida = payload?.dars?.vigente || (payload?.dars?.vencidas || [])[0];
           if (darEscolhida) {
