@@ -146,7 +146,8 @@ async function apiEmitDar(darId, msisdn){
   });
   const data = await r.json().catch(()=> ({}));
   if (!r.ok) throw new Error(data?.error || `Falha ao emitir DAR ${darId}`);
-  return data; // { numero_documento, linha_digitavel, pdf_url }
+  const { numero_documento, linha_digitavel, pdf_url } = data;
+  return { numero_documento, linha_digitavel, pdf_url }; // { numero_documento, linha_digitavel, pdf_url }
 }
 function pdfLink(darId, msisdn){
   return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
@@ -584,10 +585,24 @@ async function startBot() {
           try {
             const emit = await apiEmitDar(darId, msisdn);
             const link = emit.pdf_url || pdfLink(darId, msisdn);
-            let resposta = `DAR ${darId} emitida.`;
-            if (emit.linha_digitavel) resposta += `\nLinha digitável: ${emit.linha_digitavel}`;
-            if (link) resposta += `\nBaixar PDF: ${link}`;
-            await sock.sendMessage(jid, { text: resposta });
+            try {
+              const rPdf = await fetch(link);
+              if (!rPdf.ok) throw new Error(`HTTP ${rPdf.status}`);
+              const pdfBuffer = Buffer.from(await rPdf.arrayBuffer());
+              await sock.sendMessage(jid, {
+                document: pdfBuffer,
+                mimetype: 'application/pdf',
+                fileName: `DAR-${darId}.pdf`
+              });
+              if (emit.linha_digitavel) {
+                await sock.sendMessage(jid, { text: `Linha digitável: ${emit.linha_digitavel}` });
+              }
+            } catch (err) {
+              let resposta = 'Não consegui enviar o PDF automaticamente.';
+              if (emit.linha_digitavel) resposta += `\nLinha digitável: ${emit.linha_digitavel}`;
+              if (link) resposta += `\nBaixar PDF: ${link}`;
+              await sock.sendMessage(jid, { text: resposta });
+            }
           } catch (e) {
             await sock.sendMessage(jid, { text: `Falha ao emitir DAR: ${e.message}` });
           }
