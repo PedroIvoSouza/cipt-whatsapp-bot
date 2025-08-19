@@ -33,6 +33,12 @@ function brMoney(v){ return Number(v||0).toLocaleString('pt-BR',{style:'currency
 function brDate(iso){ try{ return new Date(iso).toLocaleDateString('pt-BR'); }catch{ return iso; } }
 const apiHeaders = () => ({ 'x-bot-key': BOT_SHARED_KEY, 'Content-Type': 'application/json' });
 
+// Remove informações sensíveis de mensagens de log
+const sanitizeSensitive = (str = '') =>
+  String(str)
+    .replace(/x-bot-key\s*[:=]\s*[^\s]+/gi, 'x-bot-key: [redacted]')
+    .replace(/x-bot-key/gi, '[redacted]');
+
 const app = express();
 app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -490,7 +496,8 @@ async function startBot() {
             await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
           }
         } catch (e) {
-          const msg = String(e.message || '');
+          const msg = sanitizeSensitive(e.message || '');
+          console.warn(`[apiGetDars] msisdn=${msisdn} erro=${msg}`);
           if (/associado a nenhum/i.test(msg)) {
             await sock.sendMessage(jid, { text:
               "Não localizei seu cadastro pelo número deste WhatsApp.\n" +
