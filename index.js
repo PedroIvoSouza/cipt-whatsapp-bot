@@ -162,15 +162,9 @@ function darResumo(d){
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
   return `Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
 }
-async function formatDarLine(msisdn, d){
+function formatDarLine(d){
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
-  const partes = [
-    `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)}`,
-    `  Valor: ${brMoney(d.valor)}`,
-    d.linha_digitavel ? `  Linha digitável: ${d.linha_digitavel}` : null,
-    `  Baixar: ${pdfLink(d.id, msisdn)}`
-  ].filter(Boolean);
-  return partes.join('\n');
+  return `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
 }
 async function montarTextoResposta(msisdn, payload){
   const linhas = [];
@@ -181,7 +175,7 @@ async function montarTextoResposta(msisdn, payload){
     linhas.push(`Olá, *${nome}*! Aqui estão suas DARs:`);
     if (payload.dars.vigente){
       linhas.push('🔷 *DAR vigente*');
-      const txt = await formatDarLine(msisdn, payload.dars.vigente);
+      const txt = formatDarLine(payload.dars.vigente);
       linhas.push(txt.replace(/^•/, `${contador})`));
       mapa[contador++] = { id: payload.dars.vigente.id, resumo: darResumo(payload.dars.vigente) };
     } else {
@@ -191,7 +185,7 @@ async function montarTextoResposta(msisdn, payload){
     if (vencidas.length){
       linhas.push(`\n🔻 *DARs vencidas* (${vencidas.length}):`);
       for (const d of vencidas.slice(0,10)) {
-        const txt = await formatDarLine(msisdn, d);
+        const txt = formatDarLine(d);
         linhas.push(txt.replace(/^•/, `${contador})`));
         mapa[contador++] = { id: d.id, resumo: darResumo(d) };
       }
@@ -210,7 +204,7 @@ async function montarTextoResposta(msisdn, payload){
       linhas.push(cab);
       if (conta.dars.vigente){
         linhas.push('  🔷 *DAR vigente*');
-        const txt = await formatDarLine(msisdn, conta.dars.vigente);
+        const txt = formatDarLine(conta.dars.vigente);
         linhas.push(txt.replace(/^•/, `${contador})`));
         mapa[contador++] = { id: conta.dars.vigente.id, resumo: darResumo(conta.dars.vigente) };
       } else {
@@ -220,7 +214,7 @@ async function montarTextoResposta(msisdn, payload){
       if (venc.length){
         linhas.push(`  🔻 *DARs vencidas* (${venc.length}):`);
         for (const d of venc.slice(0,5)) {
-          const txt = await formatDarLine(msisdn, d);
+          const txt = formatDarLine(d);
           linhas.push(txt.replace(/^•/, `${contador})`));
           mapa[contador++] = { id: d.id, resumo: darResumo(d) };
         }
@@ -484,6 +478,7 @@ async function startBot() {
       const numeroEscolhido = pergunta.trim();
       if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
         const darId = usuarios[jid].darMap[numeroEscolhido]?.id;
+
         if (darId) {
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
@@ -593,7 +588,7 @@ async function startBot() {
     try {
       if (usuarios[jid]?.aguardandoConfirmacaoDar) {
         const escolha = perguntaNormalizada;
-        const darId = usuarios[jid].aguardandoConfirmacaoDar;
+        const { id: darId } = usuarios[jid].aguardandoConfirmacaoDar;
         if (escolha === 'sim') {
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
