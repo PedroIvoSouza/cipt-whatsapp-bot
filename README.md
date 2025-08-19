@@ -21,6 +21,26 @@ Caso você utilize um banco remoto ou não necessite da funcionalidade de pagame
   ```
   Caso nenhuma fonte de dados seja encontrada, o bot continuará em execução, mas as consultas de pagamento ficarão indisponíveis.
 
+## Sistema de pagamento
+
+Algumas funcionalidades de integração exigem parâmetros fornecidos pelo sistema de pagamento utilizado pelo CIPT. As variáveis de ambiente a seguir devem ser configuradas antes da inicialização do bot:
+
+- `BOT_SHARED_KEY` – chave secreta compartilhada usada para validar requisições.
+- `ADMIN_API_BASE` – URL base da API administrativa do sistema de pagamento.
+- `ADMIN_PUBLIC_BASE` – URL pública utilizada para redirecionamentos e callbacks.
+
+Esses valores podem ser obtidos no painel do sistema de pagamento, normalmente na seção de integrações ou configurações de API. Gere ou copie a chave compartilhada e copie as URLs base dos ambientes de administração e público fornecidas pelo serviço.
+
+Exemplo de configuração em um ambiente Unix:
+
+```bash
+export BOT_SHARED_KEY="minhaChaveSecreta"
+export ADMIN_API_BASE="https://pagamentos.exemplo.com/api/admin"
+export ADMIN_PUBLIC_BASE="https://pagamentos.exemplo.com"
+```
+
+Certifique-se de manter a chave compartilhada em local seguro e não versioná-la.
+
 ## Executando
 
 ```bash

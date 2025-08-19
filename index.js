@@ -140,10 +140,6 @@ function pdfLink(darId, msisdn){
   return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
 }
 async function formatDarLine(msisdn, d){
-  // se não tem PDF ainda, tenta emitir
-  if (!d.pdf_url) {
-    try { await apiEmitDar(d.id, msisdn); } catch(e){ /* segue sem travar */ }
-  }
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
   const partes = [
     `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)}`,
@@ -438,6 +434,13 @@ async function startBot() {
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
     const pergunta = corpoMensagem.trim(); // mantém case quando necessário
 
+    if ((usuarios[jid]?.opcoesDar || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
+      delete usuarios[jid].opcoesDar;
+      delete usuarios[jid].aguardandoConfirmacaoDar;
+      await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
+      return;
+    }
+
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
     const textoLow = (corpoMensagem || '').toLowerCase();
     if (!(isGroup && !textoLow.includes('@bot'))) {
@@ -451,6 +454,11 @@ async function startBot() {
           const payload = await apiGetDars(msisdn);
           const texto = await montarTextoResposta(msisdn, payload);
           await sock.sendMessage(jid, { text: texto });
+          const darEscolhida = payload?.dars?.vigente || (payload?.dars?.vencidas || [])[0];
+          if (darEscolhida) {
+            usuarios[jid] = { ...(usuarios[jid] || {}), darPendente: { id: darEscolhida.id, msisdn } };
+            await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
+          }
         } catch (e) {
           const msg = String(e.message || '');
           if (/associado a nenhum/i.test(msg)) {
@@ -562,6 +570,7 @@ async function startBot() {
           return;
         }
       }
+
 
       if (usuarios[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
