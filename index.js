@@ -19,7 +19,20 @@ const sqlite3 = require('sqlite3').verbose(); // <- NOVO
 const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado, verificarChamadosAbertos } = require("./sheetsChamados");
 
+// ⚙️ Carrega variáveis de ambiente ANTES de ler process.env
 dotenv.config();
+
+const ADMIN_API_BASE = process.env.ADMIN_API_BASE || 'https://admin.portalcipt.com.br';
+const BOT_SHARED_KEY  = process.env.BOT_SHARED_KEY;
+if (!BOT_SHARED_KEY) {
+  console.warn('[WARN] BOT_SHARED_KEY não definido no ambiente do bot.');
+}
+
+function msisdnFromJid(jid){ return (jid.split('@')[0] || '').replace(/\D/g,''); }
+function brMoney(v){ return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function brDate(iso){ try{ return new Date(iso).toLocaleDateString('pt-BR'); }catch{ return iso; } }
+const apiHeaders = () => ({ 'x-bot-key': BOT_SHARED_KEY, 'Content-Type': 'application/json' });
+
 const app = express();
 app.use(express.json());
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -105,6 +118,91 @@ async function findPermissionarioByWhatsAppJid(jid){
   return dbGet(sql, params);
 }
 
+// === Chamadas para a API do sistema de pagamentos =========================
+async function apiGetDars(msisdn){
+  const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars?msisdn=${msisdn}`, { headers: apiHeaders() });
+  const text = await r.text(); let data;
+  try { data = JSON.parse(text); } catch { throw new Error(`Resposta inválida da API (${r.status})`); }
+  if (!r.ok) throw new Error(data?.error || `Falha (${r.status})`);
+  return data;
+}
+
+// ✅ AJUSTADO: msisdn na query string
+async function apiEmitDar(darId, msisdn){
+  const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, {
+    method: 'POST', headers: apiHeaders()
+  });
+  const data = await r.json().catch(()=> ({}));
+  if (!r.ok) throw new Error(data?.error || `Falha ao emitir DAR ${darId}`);
+  return data; // { numero_documento, linha_digitavel, pdf_url }
+}
+function pdfLink(darId, msisdn){
+  return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
+}
+async function formatDarLine(msisdn, d){
+  // se não tem PDF ainda, tenta emitir
+  if (!d.pdf_url) {
+    try { await apiEmitDar(d.id, msisdn); } catch(e){ /* segue sem travar */ }
+  }
+  const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
+  const partes = [
+    `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)}`,
+    `  Valor: ${brMoney(d.valor)}`,
+    d.linha_digitavel ? `  Linha digitável: ${d.linha_digitavel}` : null,
+    `  Baixar: ${pdfLink(d.id, msisdn)}`
+  ].filter(Boolean);
+  return partes.join('\n');
+}
+async function montarTextoResposta(msisdn, payload){
+  const linhas = [];
+  if (payload.permissionario){ // payload legado
+    const nome = payload.permissionario.nome_empresa;
+    linhas.push(`Olá, *${nome}*! Aqui estão suas DARs:`);
+    if (payload.dars.vigente){
+      linhas.push('🔷 *DAR vigente*');
+      linhas.push(await formatDarLine(msisdn, payload.dars.vigente));
+    } else {
+      linhas.push('🔷 *DAR vigente*: nenhuma.');
+    }
+    const vencidas = payload.dars.vencidas || [];
+    if (vencidas.length){
+      linhas.push(`\n🔻 *DARs vencidas* (${vencidas.length}):`);
+      for (const d of vencidas.slice(0,10)) linhas.push(await formatDarLine(msisdn, d));
+      if (vencidas.length > 10) linhas.push(`(+${vencidas.length-10} outras)`);
+    } else {
+      linhas.push('✅ Sem DARs vencidas.');
+    }
+    return linhas.join('\n');
+  }
+  if (Array.isArray(payload.contas) && payload.contas.length){
+    linhas.push('Encontrei estes cadastros vinculados ao seu número:');
+    for (const conta of payload.contas){
+      const cab = conta.tipo === 'CLIENTE_EVENTO'
+        ? `🎫 *Cliente de Eventos:* ${conta.nome}`
+        : `🏢 *Permissionário:* ${conta.nome}`;
+      linhas.push(cab);
+      if (conta.dars.vigente){
+        linhas.push('  🔷 *DAR vigente*');
+        linhas.push(await formatDarLine(msisdn, conta.dars.vigente));
+      } else {
+        linhas.push('  🔷 *DAR vigente*: nenhuma.');
+      }
+      const venc = conta.dars.vencidas || [];
+      if (venc.length){
+        linhas.push(`  🔻 *DARs vencidas* (${venc.length}):`);
+        for (const d of venc.slice(0,5)) linhas.push(await formatDarLine(msisdn, d));
+        if (venc.length > 5) linhas.push(`  (+${venc.length-5} outras)`);
+      } else {
+        linhas.push('  ✅ Sem DARs vencidas.');
+      }
+      linhas.push('');
+    }
+    return linhas.join('\n');
+  }
+  return 'Não localizei DARs para este número.';
+}
+
+// === Funções locais de consulta (mantidas) =================================
 async function listarDARsVencidas(permissionarioId){
   const sql = `
     SELECT id, mes_referencia, ano_referencia, valor, data_vencimento, status, linha_digitavel, pdf_url
@@ -348,57 +446,25 @@ async function startBot() {
       const pedeVigente  = /vigent|atual|corrente|m[eê]s/i.test(textoLow);
 
       if (pedeDAR || pedeVencidas || pedeVigente) {
+        const msisdn = msisdnFromJid(jid);
         try {
-          const perm = await findPermissionarioByWhatsAppJid(jid);
-          if (!perm) {
+          const payload = await apiGetDars(msisdn);
+          const texto = await montarTextoResposta(msisdn, payload);
+          await sock.sendMessage(jid, { text: texto });
+        } catch (e) {
+          const msg = String(e.message || '');
+          if (/associado a nenhum/i.test(msg)) {
             await sock.sendMessage(jid, { text:
               "Não localizei seu cadastro pelo número deste WhatsApp.\n" +
               "Fale com a administração para atualizar seu telefone (principal ou de cobrança)."
             });
-            return;
+          } else {
+            await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${msg}` });
           }
-          let partes = [];
-
-          if (pedeVencidas || (pedeDAR && !pedeVigente)) {
-            const vencidas = await listarDARsVencidas(perm.id);
-            if (vencidas.length) {
-              partes.push(`🔻 *DARs vencidas* (${vencidas.length}):`);
-              for (const d of vencidas.slice(0, 10)) partes.push(formatarDAR(d));
-              if (vencidas.length > 10) partes.push(`(+${vencidas.length - 10} outras)`);
-            } else {
-              partes.push('✅ Você não possui DARs vencidas.');
-            }
-          }
-
-          if (pedeVigente || pedeDAR) {
-            const vigente = await obterDARVigente(perm.id);
-            if (vigente) {
-              partes.push(`🔷 *DAR vigente*\n${formatarDAR(vigente)}`);
-            } else if (!pedeVencidas) {
-              partes.push('ℹ️ Nenhuma DAR vigente encontrada.');
-            }
-          }
-
-          if (!partes.length) {
-            partes = [
-              `Olá, *${perm.nome_empresa}* 👋`,
-              `Envie uma das opções:`,
-              `• _DAR_ — lista vigente e vencidas`,
-              `• _DAR vigente_ — apenas a atual`,
-              `• _DAR vencidas_ — apenas as atrasadas`,
-            ];
-          }
-
-          await sock.sendMessage(jid, { text: partes.join('\n\n') });
-          return; // não segue para IA neste fluxo
-        } catch (e) {
-          console.error('❌ Erro ao processar DAR via WhatsApp:', e.message);
-          await sock.sendMessage(jid, { text: "Tive um problema ao consultar suas DARs agora. Tente novamente em instantes." });
-          return;
         }
+        return; // não segue para IA neste fluxo
       }
     }
-    // === FIM BLOCO DARs ===
 
     // ✅ Comando privado de status (CH-12345 - 1)
     if (!isGroup && equipeSuporteJids.includes(jid)) {
