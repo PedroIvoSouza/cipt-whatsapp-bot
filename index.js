@@ -151,6 +151,10 @@ async function apiEmitDar(darId, msisdn){
 function pdfLink(darId, msisdn){
   return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
 }
+function darResumo(d){
+  const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
+  return `Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
+}
 async function formatDarLine(msisdn, d){
   const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
   const partes = [
@@ -172,7 +176,7 @@ async function montarTextoResposta(msisdn, payload){
       linhas.push('🔷 *DAR vigente*');
       const txt = await formatDarLine(msisdn, payload.dars.vigente);
       linhas.push(txt.replace(/^•/, `${contador})`));
-      mapa[contador++] = payload.dars.vigente.id;
+      mapa[contador++] = { id: payload.dars.vigente.id, resumo: darResumo(payload.dars.vigente) };
     } else {
       linhas.push('🔷 *DAR vigente*: nenhuma.');
     }
@@ -182,7 +186,7 @@ async function montarTextoResposta(msisdn, payload){
       for (const d of vencidas.slice(0,10)) {
         const txt = await formatDarLine(msisdn, d);
         linhas.push(txt.replace(/^•/, `${contador})`));
-        mapa[contador++] = d.id;
+        mapa[contador++] = { id: d.id, resumo: darResumo(d) };
       }
       if (vencidas.length > 10) linhas.push(`(+${vencidas.length-10} outras)`);
     } else {
@@ -201,7 +205,7 @@ async function montarTextoResposta(msisdn, payload){
         linhas.push('  🔷 *DAR vigente*');
         const txt = await formatDarLine(msisdn, conta.dars.vigente);
         linhas.push(txt.replace(/^•/, `${contador})`));
-        mapa[contador++] = conta.dars.vigente.id;
+        mapa[contador++] = { id: conta.dars.vigente.id, resumo: darResumo(conta.dars.vigente) };
       } else {
         linhas.push('  🔷 *DAR vigente*: nenhuma.');
       }
@@ -211,7 +215,7 @@ async function montarTextoResposta(msisdn, payload){
         for (const d of venc.slice(0,5)) {
           const txt = await formatDarLine(msisdn, d);
           linhas.push(txt.replace(/^•/, `${contador})`));
-          mapa[contador++] = d.id;
+          mapa[contador++] = { id: d.id, resumo: darResumo(d) };
         }
         if (venc.length > 5) linhas.push(`  (+${venc.length-5} outras)`);
       } else {
@@ -460,8 +464,8 @@ async function startBot() {
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
     const pergunta = corpoMensagem.trim(); // mantém case quando necessário
 
-    if ((usuarios[jid]?.opcoesDar || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
-      delete usuarios[jid].opcoesDar;
+    if ((usuarios[jid]?.darMap || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
+      delete usuarios[jid].darMap;
       delete usuarios[jid].aguardandoConfirmacaoDar;
       await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
       return;
@@ -472,15 +476,12 @@ async function startBot() {
     if (!(isGroup && !textoLow.includes('@bot'))) {
       const numeroEscolhido = pergunta.trim();
       if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
-        const darId = usuarios[jid].darMap[numeroEscolhido];
-        if (darId) {
+        const entrada = usuarios[jid].darMap[numeroEscolhido];
+        if (entrada) {
+          const { id: darId, resumo } = entrada;
           const msisdn = msisdnFromJid(jid);
-          try {
-            const { linha_digitavel } = await apiEmitDar(darId, msisdn);
-            await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}\nBaixar: ${pdfLink(darId, msisdn)}` });
-          } catch (e) {
-            await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
-          }
+          await sock.sendMessage(jid, { text: `Você selecionou ${resumo}. Confirma? Responda *SIM*, *NÃO* ou *SAIR*.` });
+          usuarios[jid].aguardandoConfirmacaoDar = { id: darId, msisdn };
           return;
         }
       }
@@ -498,7 +499,7 @@ async function startBot() {
           await sock.sendMessage(jid, { text: texto });
           const darEscolhida = payload?.dars?.vigente || (payload?.dars?.vencidas || [])[0];
           if (darEscolhida) {
-            usuarios[jid] = { ...(usuarios[jid] || {}), darPendente: { id: darEscolhida.id, msisdn } };
+            usuarios[jid].aguardandoConfirmacaoDar = { id: darEscolhida.id, msisdn };
             await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
           }
         } catch (e) {
@@ -578,9 +579,8 @@ async function startBot() {
     try {
       if (usuarios[jid]?.aguardandoConfirmacaoDar) {
         const escolha = perguntaNormalizada;
-        const darId = usuarios[jid].aguardandoConfirmacaoDar;
-        if (escolha === 'sim') {
-          const msisdn = msisdnFromJid(jid);
+        const { id: darId, msisdn } = usuarios[jid].aguardandoConfirmacaoDar;
+        if (escolha === 'sim' || escolha === 'ok') {
           try {
             const emit = await apiEmitDar(darId, msisdn);
             const link = emit.pdf_url || pdfLink(darId, msisdn);
@@ -592,21 +592,24 @@ async function startBot() {
             await sock.sendMessage(jid, { text: `Falha ao emitir DAR: ${e.message}` });
           }
           delete usuarios[jid].aguardandoConfirmacaoDar;
+          delete usuarios[jid].darMap;
           return;
         } else if (escolha === 'nao' || escolha === 'não') {
-          const msisdn = msisdnFromJid(jid);
-          try {
-            const payload = await apiGetDars(msisdn);
-            const texto = await montarTextoResposta(msisdn, payload);
-            await sock.sendMessage(jid, { text: texto });
-          } catch (e) {
-            await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${e.message}` });
+          const mapa = usuarios[jid].darMap;
+          if (mapa && Object.keys(mapa).length) {
+            const opcoes = Object.entries(mapa)
+              .map(([num, info]) => `${num}) ${info.resumo}`)
+              .join('\n');
+            await sock.sendMessage(jid, { text: `Escolha a DAR desejada:\n${opcoes}` });
+          } else {
+            await sock.sendMessage(jid, { text: 'Não há outras DARs disponíveis.' });
           }
           delete usuarios[jid].aguardandoConfirmacaoDar;
           return;
         } else if (escolha === 'sair') {
-          await sock.sendMessage(jid, { text: 'Ok, até logo.' });
+          await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
           delete usuarios[jid].aguardandoConfirmacaoDar;
+          delete usuarios[jid].darMap;
           return;
         } else {
           await sock.sendMessage(jid, { text: 'Responda com SIM, NÃO ou SAIR.' });
@@ -656,7 +659,8 @@ async function startBot() {
 
       const darNumero = pergunta.match(/^\d{4,}$/);
       if (darNumero) {
-        usuarios[jid] = { ...(usuarios[jid] || {}), aguardandoConfirmacaoDar: darNumero[0] };
+        const msisdn = msisdnFromJid(jid);
+        usuarios[jid] = { ...(usuarios[jid] || {}), aguardandoConfirmacaoDar: { id: darNumero[0], msisdn } };
         await sock.sendMessage(jid, { text: `Confirma emissão da DAR ${darNumero[0]}? Responda com *SIM*, *NÃO* ou *SAIR*.` });
         return;
       }
