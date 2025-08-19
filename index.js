@@ -125,11 +125,17 @@ async function findPermissionarioByWhatsAppJid(jid){
 }
 
 // === Chamadas para a API do sistema de pagamentos =========================
-async function apiGetDars(msisdn){
+async function apiGetDars(msisdn, retry = false){
   const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars?msisdn=${msisdn}`, { headers: apiHeaders() });
   const text = await r.text(); let data;
   try { data = JSON.parse(text); } catch { throw new Error(`Resposta inválida da API (${r.status})`); }
-  if (!r.ok) throw new Error(data?.error || `Falha (${r.status})`);
+  if (!r.ok){
+    const errMsg = data?.error || `Falha (${r.status})`;
+    if (!retry && /associado a nenhum/i.test(errMsg)) {
+      return apiGetDars(msisdn.slice(2), true);
+    }
+    throw new Error(errMsg);
+  }
   return data;
 }
 
