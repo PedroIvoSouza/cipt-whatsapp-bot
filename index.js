@@ -483,7 +483,7 @@ async function startBot() {
     if (!(isGroup && !textoLow.includes('@bot'))) {
       const numeroEscolhido = pergunta.trim();
       if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
-        const darId = usuarios[jid].darMap[numeroEscolhido];
+        const darId = usuarios[jid].darMap[numeroEscolhido]?.id;
         if (darId) {
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
@@ -493,9 +493,11 @@ async function startBot() {
           } catch (e) {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
-
-          return;
+        } else {
+          await sock.sendMessage(jid, { text: 'Opção inválida. Digite um número da lista ou "SAIR" para encerrar.' });
         }
+
+        return;
       }
 
       const pedeDAR = /\b(dar|boleto|2.?via|segunda via)\b/i.test(textoLow);
