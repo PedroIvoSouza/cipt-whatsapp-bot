@@ -547,10 +547,26 @@ async function startBot() {
           try {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
+            let pdfUrl = null;
+            let pdfBuffer = null;
+            if (pdf_url) {
+              if (/^https?:\/\//i.test(pdf_url)) {
+                pdfUrl = pdf_url;
+              } else {
+                pdfBuffer = Buffer.from(pdf_url, 'base64');
+              }
+            } else {
+              pdfUrl = pdfLink(darId, msisdnCorrigido);
+            }
             if (pdfUrl) {
               await sock.sendMessage(jid, {
                 document: { url: pdfUrl },
+                mimetype: 'application/pdf',
+                fileName: `DAR-${darId}.pdf`
+              });
+            } else if (pdfBuffer) {
+              await sock.sendMessage(jid, {
+                document: pdfBuffer,
                 mimetype: 'application/pdf',
                 fileName: `DAR-${darId}.pdf`
               });
@@ -691,10 +707,26 @@ async function startBot() {
           try {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
+            let pdfUrl = null;
+            let pdfBuffer = null;
+            if (pdf_url) {
+              if (/^https?:\/\//i.test(pdf_url)) {
+                pdfUrl = pdf_url;
+              } else {
+                pdfBuffer = Buffer.from(pdf_url, 'base64');
+              }
+            } else {
+              pdfUrl = pdfLink(darId, msisdnCorrigido);
+            }
             if (pdfUrl) {
               await sock.sendMessage(jid, {
                 document: { url: pdfUrl },
+                mimetype: 'application/pdf',
+                fileName: `DAR-${darId}.pdf`
+              });
+            } else if (pdfBuffer) {
+              await sock.sendMessage(jid, {
+                document: pdfBuffer,
                 mimetype: 'application/pdf',
                 fileName: `DAR-${darId}.pdf`
               });
