@@ -142,7 +142,10 @@ async function apiGetDars(msisdn, retry = 0){
 // ✅ AJUSTADO: msisdn na query string
 async function apiEmitDar(darId, msisdn, retry = 0){
   const extract = (payload = {}) => {
-    const dar = payload?.dar || payload?.data?.dar || payload?.data || payload;
+    let dar = payload?.dar || payload?.data?.dar || payload?.data || payload;
+    // Algumas respostas podem retornar a DAR dentro de arrays ou em níveis extras
+    if (Array.isArray(dar)) dar = dar[0];
+    if (dar?.dar) dar = dar.dar;
     let {
       linha_digitavel,
       pdf_url,

@@ -143,6 +143,26 @@ function loadApiEmitDar(responses) {
     /sem dados retornados/
   );
 
+  apiEmitDar = loadApiEmitDar({
+    dar: [{
+      linha_digitavel: '1010',
+      pdf_url: 'http://arr',
+      mes_referencia: 10,
+      ano_referencia: 2024,
+      data_vencimento: '2024-10-10',
+      valor_total: 200
+    }]
+  });
+  res = await apiEmitDar('6', '5511999999999');
+  assert.deepStrictEqual(res, {
+    linha_digitavel: '1010',
+    pdf_url: 'http://arr',
+    competencia: '10/2024',
+    vencimento: '2024-10-10',
+    valor: 200,
+    msisdnCorrigido: '5511999999999'
+  });
+
   console.log('All apiEmitDar tests passed');
 })();
 
