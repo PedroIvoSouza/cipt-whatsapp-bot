@@ -163,6 +163,53 @@ function loadApiEmitDar(responses) {
     msisdnCorrigido: '5511999999999'
   });
 
+  // Sucesso com resposta em formato alternativo (dados.dar + linhaDigitavel)
+  apiEmitDar = loadApiEmitDar({
+    dados: { dar: {
+      linhaDigitavel: '1111',
+      pdfUrl: 'http://altform',
+      mesReferencia: 12,
+      anoReferencia: 2024,
+      dataVencimento: '2024-12-20',
+      valorTotal: 400
+    } }
+  });
+  res = await apiEmitDar('7', '5511999999999');
+  assert.deepStrictEqual(res, {
+    linha_digitavel: '1111',
+    pdf_url: 'http://altform',
+    competencia: '12/2024',
+    vencimento: '2024-12-20',
+    valor: 400,
+    msisdnCorrigido: '5511999999999'
+  });
+
+  // Fallback GET primeiro com msisdn e depois sem msisdn
+  apiEmitDar = loadApiEmitDar([
+    { ok: false, body: { error: 'DAR já emitida' } },
+    { ok: false, body: { error: 'msisdn inválido' } },
+    { ok: true, body: { dados: { dar: {
+      linhaDigitavel: '1212',
+      pdfUrl: 'http://semmsisdn',
+      mesReferencia: 11,
+      anoReferencia: 2024,
+      dataVencimento: '2024-11-11',
+      valorTotal: 300
+    } } } }
+  ]);
+  res = await apiEmitDar('8', '5511999999999');
+  assert.deepStrictEqual(res, {
+    linha_digitavel: '1212',
+    pdf_url: 'http://semmsisdn',
+    competencia: '11/2024',
+    vencimento: '2024-11-11',
+    valor: 300,
+    msisdnCorrigido: '5511999999999'
+  });
+  assert.strictEqual(apiEmitDar.fetchCalls.length, 3);
+  assert(apiEmitDar.fetchCalls[1][0].includes('?msisdn=5511999999999'));
+  assert(!apiEmitDar.fetchCalls[2][0].includes('msisdn'));
+
   console.log('All apiEmitDar tests passed');
 })();
 
