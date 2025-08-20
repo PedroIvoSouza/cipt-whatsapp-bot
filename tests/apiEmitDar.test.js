@@ -151,6 +151,8 @@ function loadApiEmitDar(responses) {
     msisdnCorrigido: '5511999999999'
   });
   assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
+  assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars');
+  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.numero_documento, '4');
 
   apiEmitDar = loadApiEmitDar([
     { ok: false, body: { error: 'DAR já emitida' } },
@@ -202,32 +204,18 @@ function loadApiEmitDar(responses) {
     msisdnCorrigido: '5511999999999'
   });
 
-  // Fallback GET primeiro com msisdn e depois sem msisdn
+  // Erro 400 ao consultar DAR já emitida com numero_documento inválido
   apiEmitDar = loadApiEmitDar([
     { ok: false, body: { error: 'DAR já emitida' } },
-    { ok: false, body: { error: 'msisdn inválido' } },
-    { ok: true, body: { dados: { dar: {
-      linhaDigitavel: '1212',
-      pdfUrl: 'http://semmsisdn',
-      mesReferencia: 11,
-      anoReferencia: 2024,
-      dataVencimento: '2024-11-11',
-      valorTotal: 300
-    } } } }
+    { status: 400, body: { error: 'numero_documento inválido' } }
   ]);
-  res = await apiEmitDar('8', '5511999999999');
-  assert.deepStrictEqual(res, {
-    linha_digitavel: '1212',
-    pdf_url: 'http://semmsisdn',
-    competencia: '11/2024',
-    vencimento: '2024-11-11',
-    valor: 300,
-    msisdnCorrigido: '5511999999999'
-  });
-  assert.strictEqual(apiEmitDar.axiosCalls.length, 3);
-  assert(apiEmitDar.axiosCalls[0].url.includes('?msisdn=5511999999999'));
-  assert(apiEmitDar.axiosCalls[1].url.includes('?msisdn=5511999999999'));
-  assert(!apiEmitDar.axiosCalls[2].url.includes('msisdn'));
+  await assert.rejects(
+    () => apiEmitDar('8', '5511999999999'),
+    /numero_documento inválido/
+  );
+  assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
+  assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars');
+  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.numero_documento, '8');
 
   console.log('All apiEmitDar tests passed');
 })();
