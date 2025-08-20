@@ -14,15 +14,23 @@ function loadApiEmitDar(responses) {
       const resp = nextResp();
       const status = resp.status ?? (resp.ok === false ? 400 : 200);
       const data = resp.body ?? resp;
-      return { status, data };
+      if (status >= 200 && status < 300) return { status, data };
+      const err = new Error(data?.error || 'Erro');
+      err.response = { status, data };
+      throw err;
     },
     post: async (url, data = null, config = {}) => {
       calls.push({ method: 'post', url, data, config });
       const resp = nextResp();
       const status = resp.status ?? (resp.ok === false ? 400 : 200);
       const respData = resp.body ?? resp;
-      return { status, data: respData };
-    }
+      if (status >= 200 && status < 300) return { status, data: respData };
+      const err = new Error(respData?.error || 'Erro');
+      err.response = { status, data: respData };
+      throw err;
+    },
+    interceptors: { request: { use(){} } },
+    create: () => axiosMock
   };
   const indexPath = path.resolve(__dirname, '..', 'index.js');
   const originalRequire = Module.prototype.require;
@@ -217,6 +225,7 @@ function loadApiEmitDar(responses) {
     msisdnCorrigido: '5511999999999'
   });
   assert.strictEqual(apiEmitDar.axiosCalls.length, 3);
+  assert(apiEmitDar.axiosCalls[0].url.includes('?msisdn=5511999999999'));
   assert(apiEmitDar.axiosCalls[1].url.includes('?msisdn=5511999999999'));
   assert(!apiEmitDar.axiosCalls[2].url.includes('msisdn'));
 

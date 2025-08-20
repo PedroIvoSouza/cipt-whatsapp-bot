@@ -16,7 +16,6 @@ const OpenAI = require('openai');
 const axios = require('axios');
 const cron = require('node-cron');
 const sqlite3 = require('sqlite3').verbose(); // <- NOVO
-const axios = require('axios'); // <- ADIÇÃO
 const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado, verificarChamadosAbertos } = require("./sheetsChamados");
 
@@ -226,7 +225,10 @@ function ensureFields(obj, msisdn) {
 async function apiEmitDar(darId, msisdn, retry = 0) {
   // 1) tenta POST com msisdn no corpo
   try {
-    const res = await api.post(`/api/bot/dars/${darId}/emit`, { msisdn });
+    const res = await api.post(
+      `/api/bot/dars/${darId}/emit?msisdn=${msisdn}`,
+      { msisdn }
+    );
     const fields = extractDar(res.data);
     return ensureFields(fields, msisdn);
   } catch (errBody) {
@@ -234,33 +236,23 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
     const data = errBody.response?.data;
     const msg = data?.error || errBody.message || 'Falha ao emitir DAR';
 
-    // Alguns backends esperam msisdn na query. Tenta de novo.
-    if (!status || status === 400) {
-      try {
-        const resQ = await api.post(`/api/bot/dars/${darId}/emit`, null, { params: { msisdn } });
-        const fieldsQ = extractDar(resQ.data);
-        return ensureFields(fieldsQ, msisdn);
-      } catch (errQuery) {
-        // prossegue para os próximos tratamentos
-        errBody._fallbackQueryErr = errQuery;
-      }
-    }
-
     // 409 -> já emitida: consulta com msisdn e, se vier incompleto, sem msisdn
     if (status === 409 || /dar j[aá] emitid/i.test(msg)) {
       try {
-        let resGet = await api.get(`/api/bot/dars/${darId}`, { params: { msisdn } });
-        let fields = extractDar(resGet.data);
-        try {
-          return ensureFields(fields, msisdn);
-        } catch {
-          // tentar novamente sem msisdn
-          resGet = await api.get(`/api/bot/dars/${darId}`);
-          fields = extractDar(resGet.data);
-          return ensureFields(fields, msisdn);
-        }
+        const resGet = await api.get(`/api/bot/dars/${darId}?msisdn=${msisdn}`);
+        const fields = extractDar(resGet.data);
+        return ensureFields(fields, msisdn);
+      } catch (primeiraConsultaErr) {
+        // tenta novamente sem msisdn, ignorando erro da primeira tentativa
+      }
+      try {
+        const resGet = await api.get(`/api/bot/dars/${darId}`);
+        const fields = extractDar(resGet.data);
+        return ensureFields(fields, msisdn);
       } catch (consultaErr) {
-        // retorna erro original
+        if (consultaErr.message === 'Falha ao obter dados da DAR') {
+          throw new Error('sem dados retornados');
+        }
         const sMsg = sanitizeSensitive(msg);
         throw new Error(sMsg);
       }
