@@ -15,7 +15,7 @@ function loadApiEmitDar(responses) {
       const status = resp.status ?? (resp.ok === false ? 400 : 200);
       const data = resp.body ?? resp;
       if (status >= 200 && status < 300) return { status, data };
-      const err = new Error(data?.error || 'Erro');
+      const err = new Error(`Request failed with status code ${status}`);
       err.response = { status, data };
       throw err;
     },
@@ -25,7 +25,7 @@ function loadApiEmitDar(responses) {
       const status = resp.status ?? (resp.ok === false ? 400 : 200);
       const respData = resp.body ?? resp;
       if (status >= 200 && status < 300) return { status, data: respData };
-      const err = new Error(respData?.error || 'Erro');
+      const err = new Error(`Request failed with status code ${status}`);
       err.response = { status, data: respData };
       throw err;
     },

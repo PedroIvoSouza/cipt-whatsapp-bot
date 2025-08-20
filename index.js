@@ -254,7 +254,7 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
         if (/Campos ausentes/i.test(consultaErr.message)) {
           throw new Error('sem dados retornados');
         }
-        const sMsg = sanitizeSensitive(consultaErr.message || msg);
+        const sMsg = sanitizeSensitive(data?.error || consultaErr.message);
         throw new Error(sMsg);
       }
     }
