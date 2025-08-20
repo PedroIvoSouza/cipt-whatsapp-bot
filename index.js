@@ -240,7 +240,7 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
     if (status === 409 || /dar j[aá] emitid/i.test(msg)) {
       try {
         const resGet = await api.get('/api/bot/dars', {
-          params: { numero_documento: darId },
+          params: { numero_documento: darId, msisdn },
         });
         return ensureFields(extract(resGet.data));
       } catch (consultaErr) {

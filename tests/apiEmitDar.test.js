@@ -153,6 +153,7 @@ function loadApiEmitDar(responses) {
   assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
   assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars');
   assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.numero_documento, '4');
+  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.msisdn, '5511999999999');
 
   apiEmitDar = loadApiEmitDar([
     { ok: false, body: { error: 'DAR já emitida' } },
@@ -216,6 +217,7 @@ function loadApiEmitDar(responses) {
   assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
   assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars');
   assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.numero_documento, '8');
+  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.msisdn, '5511999999999');
 
   console.log('All apiEmitDar tests passed');
 })();
