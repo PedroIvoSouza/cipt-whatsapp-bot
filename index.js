@@ -153,20 +153,27 @@ async function apiEmitDar(darId, msisdn, retry = 0){
     vencimento,
     valor,
     mes_referencia,
+    mesReferencia,
     ano_referencia,
-    data_vencimento
+    anoReferencia,
+    data_vencimento,
+    dataVencimento,
+    valor_total,
+    valorTotal
   } = dar || {};
 
-  if (!competencia && mes_referencia != null && ano_referencia != null) {
-    competencia = `${String(mes_referencia).padStart(2, '0')}/${ano_referencia}`;
+  if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
+    const mes = mes_referencia ?? mesReferencia;
+    const ano = ano_referencia ?? anoReferencia;
+    competencia = `${String(mes).padStart(2, '0')}/${ano}`;
   }
 
-  if (!vencimento && data_vencimento) {
-    vencimento = data_vencimento;
+  if (!vencimento && (data_vencimento || dataVencimento)) {
+    vencimento = data_vencimento || dataVencimento;
   }
 
   if (valor == null) {
-    valor = dar?.valor_total ?? dar?.total;
+    valor = valor_total ?? valorTotal ?? dar?.total;
   }
 
   const ensureFields = () => {
@@ -191,7 +198,8 @@ async function apiEmitDar(darId, msisdn, retry = 0){
 }
 function normalizeDar(d = {}){
   const id = d.id ?? d.numero_documento ?? d.numero;
-  let mes = d.mes_referencia, ano = d.ano_referencia;
+  let mes = d.mes_referencia ?? d.mesReferencia;
+  let ano = d.ano_referencia ?? d.anoReferencia;
   if ((mes == null || ano == null) && d.competencia){
     const m = String(d.competencia).match(/(\d{1,2})[\/-](\d{4})/);
     if (m){
@@ -199,8 +207,8 @@ function normalizeDar(d = {}){
       ano ??= m[2];
     }
   }
-  const data_vencimento = d.data_vencimento || d.vencimento;
-  const valor = d.valor ?? d.valor_total ?? d.total;
+  const data_vencimento = d.data_vencimento || d.dataVencimento || d.vencimento;
+  const valor = d.valor ?? d.valor_total ?? d.valorTotal ?? d.total;
   return { ...d, id, mes, ano, data_vencimento, valor };
 }
 function darResumo(d){
