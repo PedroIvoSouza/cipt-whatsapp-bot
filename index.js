@@ -142,13 +142,21 @@ async function apiGetDars(msisdn, retry = 0){
 // ✅ AJUSTADO: msisdn na query string
 async function apiEmitDar(darId, msisdn, retry = 0){
   const extract = (payload = {}) => {
-    let dar = payload?.dar || payload?.data?.dar || payload?.data || payload;
+    let dar =
+      payload?.dar ||
+      payload?.data?.dar ||
+      payload?.dados?.dar ||
+      payload?.data ||
+      payload?.dados ||
+      payload;
     // Algumas respostas podem retornar a DAR dentro de arrays ou em níveis extras
     if (Array.isArray(dar)) dar = dar[0];
     if (dar?.dar) dar = dar.dar;
     let {
       linha_digitavel,
+      linhaDigitavel,
       pdf_url,
+      pdfUrl,
       competencia,
       vencimento,
       valor,
@@ -159,8 +167,11 @@ async function apiEmitDar(darId, msisdn, retry = 0){
       data_vencimento,
       dataVencimento,
       valor_total,
-      valorTotal
+      valorTotal,
     } = dar || {};
+
+    linha_digitavel = linha_digitavel || linhaDigitavel;
+    pdf_url = pdf_url || pdfUrl;
 
     if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
       const mes = mes_referencia ?? mesReferencia;
@@ -198,11 +209,19 @@ async function apiEmitDar(darId, msisdn, retry = 0){
     if (/dar j[aá] emitid/i.test(errMsg)) {
       // DAR já emitido: tentar obter dados existentes
       if (!fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
-        const r2 = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}?msisdn=${msisdn}`, { headers: apiHeaders() });
-        const data2 = await r2.json().catch(() => ({}));
+        const baseUrl = `${ADMIN_API_BASE}/api/bot/dars/${darId}`;
+        let r2 = await fetch(`${baseUrl}?msisdn=${msisdn}`, { headers: apiHeaders() });
+        let data2 = await r2.json().catch(() => ({}));
         fields = extract(data2);
         if (!r2.ok || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
-          throw new Error('DAR já emitida, mas sem dados retornados');
+          console.error('Fallback DAR fetch with msisdn failed or incomplete:', data2);
+          r2 = await fetch(baseUrl, { headers: apiHeaders() });
+          data2 = await r2.json().catch(() => ({}));
+          fields = extract(data2);
+          if (!r2.ok || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
+            console.error('Fallback DAR fetch without msisdn failed or incomplete:', data2);
+            throw new Error('DAR já emitida, mas sem dados retornados');
+          }
         }
       }
       return ensureFields(fields);
