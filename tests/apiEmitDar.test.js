@@ -152,7 +152,10 @@ function loadApiEmitDar(responses) {
   });
   assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
   assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars/4');
-  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.msisdn, '5511999999999');
+  assert.deepStrictEqual(
+    apiEmitDar.axiosCalls[1].config,
+    { params: { msisdn: '5511999999999' } }
+  );
 
   apiEmitDar = loadApiEmitDar([
     { ok: false, body: { error: 'DAR já emitida' } },
@@ -215,8 +218,27 @@ function loadApiEmitDar(responses) {
   );
   assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
   assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars/8');
-  assert.strictEqual(apiEmitDar.axiosCalls[1].config.params.msisdn, '5511999999999');
+  assert.deepStrictEqual(
+    apiEmitDar.axiosCalls[1].config,
+    { params: { msisdn: '5511999999999' } }
+  );
+
+  // Erro 404 ao consultar DAR já emitida - mensagem propagada
+  apiEmitDar = loadApiEmitDar([
+    { ok: false, body: { error: 'DAR já emitida' } },
+    { status: 404, body: { error: 'DAR não encontrada' } }
+  ]);
+  await assert.rejects(
+    () => apiEmitDar('9', '5511999999999'),
+    /DAR não encontrada/
+  );
+  assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
+  assert.strictEqual(apiEmitDar.axiosCalls[1].url, '/api/bot/dars/9');
+  assert.deepStrictEqual(
+    apiEmitDar.axiosCalls[1].config,
+    { params: { msisdn: '5511999999999' } }
+  );
 
   console.log('All apiEmitDar tests passed');
-})();
+  })();
 
