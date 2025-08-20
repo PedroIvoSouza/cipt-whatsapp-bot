@@ -525,6 +525,7 @@ async function startBot() {
     const nomeContato = msg.pushName || "Usuário";
     const corpoMensagem = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
     const pergunta = corpoMensagem.trim(); // mantém case quando necessário
+    const perguntaNormalizada = corpoMensagem.toLowerCase().trim().replace(/@bot/gi, "");
 
     if ((usuarios[jid]?.darMap || usuarios[jid]?.aguardandoConfirmacaoDar) && /^sair$/i.test(pergunta)) {
       delete usuarios[jid].darMap;
@@ -533,6 +534,44 @@ async function startBot() {
       delete usuarios[jid].darOffsets;
       await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
       return;
+    }
+
+    if (usuarios[jid]?.aguardandoConfirmacaoDar) {
+      const escolha = perguntaNormalizada;
+      const { id: darId, pdfUrl, linha_digitavel } = usuarios[jid].aguardandoConfirmacaoDar;
+      if (escolha === 'sim') {
+        if (pdfUrl) {
+          await sock.sendMessage(jid, {
+            document: { url: pdfUrl },
+            mimetype: 'application/pdf',
+            fileName: `DAR-${darId}.pdf`
+          });
+        }
+        let resposta = `DAR ${darId} emitida.`;
+        if (linha_digitavel) resposta += `\nLinha digitável: ${linha_digitavel}`;
+        await sock.sendMessage(jid, { text: resposta });
+        delete usuarios[jid].aguardandoConfirmacaoDar;
+        delete usuarios[jid].darMap;
+        return;
+      } else if (escolha === 'nao' || escolha === 'não') {
+        const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
+        try {
+          const { data: payload, msisdnCorrigido } = await apiGetDars(msisdnBase);
+          usuarios[jid].msisdnCorrigido = msisdnCorrigido;
+          const { texto, mapa, mostradas } = await montarTextoResposta(msisdnCorrigido, payload);
+          await sock.sendMessage(jid, { text: texto });
+          usuarios[jid].darMap = mapa;
+          usuarios[jid].darPayload = payload;
+          usuarios[jid].darOffsets = mostradas;
+        } catch (e) {
+          await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${e.message}` });
+        }
+        delete usuarios[jid].aguardandoConfirmacaoDar;
+        return;
+      } else {
+        await sock.sendMessage(jid, { text: 'Responda com SIM, NÃO ou SAIR.' });
+        return;
+      }
     }
 
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
@@ -659,7 +698,6 @@ async function startBot() {
       }
     }
     
-    const perguntaNormalizada = corpoMensagem.toLowerCase().trim().replace(/@bot/gi, "");
     if (isGroup && !corpoMensagem.toLowerCase().includes('@bot')) return;
     if (!perguntaNormalizada) return;
     salvarLog(nomeContato, perguntaNormalizada);
@@ -686,51 +724,6 @@ async function startBot() {
     await delay(1500);
 
     try {
-      if (usuarios[jid]?.aguardandoConfirmacaoDar) {
-        const escolha = perguntaNormalizada;
-        const { id: darId, pdfUrl, linha_digitavel } = usuarios[jid].aguardandoConfirmacaoDar;
-        if (escolha === 'sim') {
-          if (pdfUrl) {
-            await sock.sendMessage(jid, {
-              document: { url: pdfUrl },
-              mimetype: 'application/pdf',
-              fileName: `DAR-${darId}.pdf`
-            });
-          }
-          let resposta = `DAR ${darId} emitida.`;
-          if (linha_digitavel) resposta += `\nLinha digitável: ${linha_digitavel}`;
-          await sock.sendMessage(jid, { text: resposta });
-          delete usuarios[jid].aguardandoConfirmacaoDar;
-          delete usuarios[jid].darMap;
-          return;
-        } else if (escolha === 'nao' || escolha === 'não') {
-          const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
-          try {
-            const { data: payload, msisdnCorrigido } = await apiGetDars(msisdnBase);
-            usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            const { texto, mapa, mostradas } = await montarTextoResposta(msisdnCorrigido, payload);
-            await sock.sendMessage(jid, { text: texto });
-            usuarios[jid].darMap = mapa;
-            usuarios[jid].darPayload = payload;
-            usuarios[jid].darOffsets = mostradas;
-          } catch (e) {
-            await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${e.message}` });
-
-          }
-          delete usuarios[jid].aguardandoConfirmacaoDar;
-          return;
-        } else if (escolha === 'sair') {
-          await sock.sendMessage(jid, { text: 'Fluxo de DAR encerrado. Se precisar de algo mais, é só me chamar! 👋' });
-          delete usuarios[jid].aguardandoConfirmacaoDar;
-          delete usuarios[jid].darMap;
-          return;
-        } else {
-          await sock.sendMessage(jid, { text: 'Responda com SIM, NÃO ou SAIR.' });
-          return;
-        }
-      }
-
-
       if (usuarios[jid]?.chamadoPendente) {
         if (perguntaNormalizada === "sim") {
           const protocolo = "CH-" + Date.now().toString().slice(-5);
