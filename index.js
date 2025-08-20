@@ -248,6 +248,13 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
         const resGet = await api.get(`/api/bot/dars/${darId}`);
         return ensureFields(extract(resGet.data));
       } catch (consultaErr) {
+        const status = consultaErr.response?.status;
+        const data = consultaErr.response?.data;
+        if (consultaErr.response) {
+          console.error('Fallback GET falhou:', status, data);
+        } else {
+          console.error('Fallback GET falhou:', consultaErr.message);
+        }
         if (/Campos ausentes/i.test(consultaErr.message)) {
           throw new Error('sem dados retornados');
         }
