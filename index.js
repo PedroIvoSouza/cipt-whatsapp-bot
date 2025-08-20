@@ -247,7 +247,12 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
         } catch (e) {
           console.error('Consulta GET falhou:', resGet.status, resGet.data);
           if (/Campos ausentes/i.test(e.message)) {
-            throw new Error('sem dados retornados');
+            const missing = e.message
+              .split(':')[1]
+              ?.split(',')
+              .map((s) => s.trim())
+              .filter(Boolean) || [];
+            throw new Error(`Campos ausentes: ${missing.join(', ')}`);
           }
           const sMsg = sanitizeSensitive(e.message);
           throw new Error(sMsg);
