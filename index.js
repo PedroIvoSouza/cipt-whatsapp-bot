@@ -144,16 +144,21 @@ async function apiEmitDar(darId, msisdn, retry = 0){
   const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, {
     method: 'POST', headers: apiHeaders()
   });
-  const data = await r.json().catch(()=> ({}));
+  const data = await r.json().catch(() => ({}));
+  const dar = data?.dar || data;
+  const { linha_digitavel, pdf_url, competencia, vencimento, valor } = dar;
   if (!r.ok){
     const errMsg = data?.error || `Falha ao emitir DAR ${darId}`;
+    if (/dar j[aá] emitid/i.test(errMsg)) {
+      // DAR já emitido: tratar como sucesso e retornar campos
+      return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
+    }
     if (retry === 0 && msisdn.length === 12 && /associado a nenhum/i.test(errMsg)) {
       return apiEmitDar(darId, msisdn.slice(0,4) + '9' + msisdn.slice(4), 1);
     }
     throw new Error(errMsg);
   }
-  return { ...data, msisdnCorrigido: msisdn }; // { numero_documento, linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido }
-
+  return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
 }
 function normalizeDar(d = {}){
   const id = d.id ?? d.numero_documento ?? d.numero;
