@@ -538,6 +538,29 @@ async function startBot() {
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
     const textoLow = (corpoMensagem || '').toLowerCase();
     if (!(isGroup && !textoLow.includes('@bot'))) {
+      // Primeiro trata confirmações pendentes de envio de PDF
+      if (usuarios[jid]?.aguardandoConfirmacaoDar) {
+        const pend = usuarios[jid].aguardandoConfirmacaoDar;
+        if (/^sim$/i.test(pergunta)) {
+          if (pend.pdfUrl) {
+            await sock.sendMessage(jid, {
+              document: { url: pend.pdfUrl },
+              mimetype: 'application/pdf',
+              fileName: `DAR-${pend.darId}.pdf`
+            });
+          } else {
+            await sock.sendMessage(jid, { text: 'PDF desta DAR não disponível.' });
+          }
+          delete usuarios[jid].aguardandoConfirmacaoDar;
+        } else if (/^(nao|não)$/i.test(pergunta)) {
+          await sock.sendMessage(jid, { text: 'Tudo bem, não enviarei o PDF. Se desejar outra DAR, responda com o número ou digite "mais".' });
+          delete usuarios[jid].aguardandoConfirmacaoDar;
+        } else {
+          await sock.sendMessage(jid, { text: 'Por favor, responda *SIM* ou *NÃO*.' });
+        }
+        return;
+      }
+
       const numeroEscolhido = pergunta.match(/\d+/)?.[0];
       if (numeroEscolhido && usuarios[jid]?.darMap) {
         const darEntry = usuarios[jid].darMap[numeroEscolhido];
@@ -548,16 +571,11 @@ async function startBot() {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
             const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
-            if (pdfUrl) {
-              await sock.sendMessage(jid, {
-                document: { url: pdfUrl },
-                mimetype: 'application/pdf',
-                fileName: `DAR-${darId}.pdf`
-              });
-            }
-            if (linha_digitavel) {
-              await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}` });
-            }
+            const resumo = darEntry.resumo ? `${darEntry.resumo}\n` : '';
+            const textoDetalhes = `${resumo}${linha_digitavel ? `Linha digitável: ${linha_digitavel}` : ''}`;
+            await sock.sendMessage(jid, { text: textoDetalhes.trim() });
+            usuarios[jid].aguardandoConfirmacaoDar = { darId, pdfUrl };
+            await sock.sendMessage(jid, { text: 'Deseja receber este DAR em arquivo PDF? Responda *SIM* ou *NÃO*.' });
           } catch (e) {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
@@ -603,11 +621,7 @@ async function startBot() {
           const { texto, mapa, mostradas } = await montarTextoResposta(msisdnCorrigido, payload);
           usuarios[jid] = { ...(usuarios[jid] || {}), darMap: mapa, msisdnCorrigido, darPayload: payload, darOffsets: mostradas };
           await sock.sendMessage(jid, { text: texto });
-          const darEscolhida = (payload?.dars?.vigentes || [])[0] || (payload?.dars?.vencidas || [])[0];
-          if (darEscolhida) {
-            usuarios[jid] = { ...(usuarios[jid] || {}), darPendente: { id: darEscolhida.id, msisdn: msisdnCorrigido } };
-            await sock.sendMessage(jid, { text: 'Deseja receber a linha digitável e o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.' });
-          }
+          await sock.sendMessage(jid, { text: "Responda com o número da DAR desejada ou digite 'mais' para ver outras. Para encerrar, envie 'sair'." });
         } catch (e) {
           const msg = sanitizeSensitive(e.message || '');
           console.warn(`[apiGetDars] msisdn=${msisdnOrig} erro=${msg}`);
