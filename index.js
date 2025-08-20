@@ -13,7 +13,7 @@ const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
-const fetch = require('node-fetch');
+const axios = require('axios');
 const cron = require('node-cron');
 const sqlite3 = require('sqlite3').verbose(); // <- NOVO
 const { getCiptPrompt } = require("./ciptPrompt.js");
@@ -126,10 +126,16 @@ async function findPermissionarioByWhatsAppJid(jid){
 
 // === Chamadas para a API do sistema de pagamentos =========================
 async function apiGetDars(msisdn, retry = 0){
-  const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars?msisdn=${msisdn}`, { headers: apiHeaders() });
-  const text = await r.text(); let data;
-  try { data = JSON.parse(text); } catch { throw new Error(`Resposta inválida da API (${r.status})`); }
-  if (!r.ok){
+  const r = await axios.get(`${ADMIN_API_BASE}/api/bot/dars?msisdn=${msisdn}`, {
+    headers: apiHeaders(),
+    validateStatus: () => true,
+  });
+  let data = r.data;
+  if (typeof data !== 'object') {
+    try { data = JSON.parse(data); } catch { throw new Error(`Resposta inválida da API (${r.status})`); }
+  }
+  const ok = r.status >= 200 && r.status < 300;
+  if (!ok){
     const errMsg = data?.error || `Falha (${r.status})`;
     if (retry === 0 && msisdn.length === 12 && /associado a nenhum/i.test(errMsg)) {
       return apiGetDars(msisdn.slice(0,4) + '9' + msisdn.slice(4), 1);
@@ -198,27 +204,31 @@ async function apiEmitDar(darId, msisdn, retry = 0){
     return { ...obj, msisdnCorrigido: msisdn };
   };
 
-  const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, {
-    method: 'POST', headers: apiHeaders()
+  const r = await axios.post(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, null, {
+    headers: apiHeaders(),
+    validateStatus: () => true,
   });
-  const data = await r.json().catch(() => ({}));
+  const data = r.data || {};
   let fields = extract(data);
 
-  if (!r.ok){
+  const ok = r.status >= 200 && r.status < 300;
+  if (!ok){
     const errMsg = data?.error || `Falha ao emitir DAR ${darId}`;
     if (/dar j[aá] emitid/i.test(errMsg)) {
       // DAR já emitido: tentar obter dados existentes
       if (!fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
         const baseUrl = `${ADMIN_API_BASE}/api/bot/dars/${darId}`;
-        let r2 = await fetch(`${baseUrl}?msisdn=${msisdn}`, { headers: apiHeaders() });
-        let data2 = await r2.json().catch(() => ({}));
+        let r2 = await axios.get(`${baseUrl}?msisdn=${msisdn}`, { headers: apiHeaders(), validateStatus: () => true });
+        let data2 = r2.data || {};
         fields = extract(data2);
-        if (!r2.ok || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
+        const ok2 = r2.status >= 200 && r2.status < 300;
+        if (!ok2 || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
           console.error('Fallback DAR fetch with msisdn failed or incomplete:', data2);
-          r2 = await fetch(baseUrl, { headers: apiHeaders() });
-          data2 = await r2.json().catch(() => ({}));
+          r2 = await axios.get(baseUrl, { headers: apiHeaders(), validateStatus: () => true });
+          data2 = r2.data || {};
           fields = extract(data2);
-          if (!r2.ok || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
+          const ok3 = r2.status >= 200 && r2.status < 300;
+          if (!ok3 || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
             console.error('Fallback DAR fetch without msisdn failed or incomplete:', data2);
             throw new Error('DAR já emitida, mas sem dados retornados');
           }
@@ -882,7 +892,7 @@ async function main() {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
     if(process.env.RENDER_URL) {
       console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
-      setInterval(() => { fetch(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message)); }, 14 * 60 * 1000);
+      setInterval(() => { axios.get(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message)); }, 14 * 60 * 1000);
       
       console.log("⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.");
       cron.schedule('30 11,16 * * 1-5', () => {
