@@ -547,33 +547,20 @@ async function startBot() {
           try {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            let pdfUrl = null;
-            let pdfBuffer = null;
-            if (pdf_url) {
-              if (/^https?:\/\//i.test(pdf_url)) {
-                pdfUrl = pdf_url;
-              } else {
-                pdfBuffer = Buffer.from(pdf_url, 'base64');
-              }
-            } else {
-              pdfUrl = pdfLink(darId, msisdnCorrigido);
-            }
-            if (pdfUrl) {
-              await sock.sendMessage(jid, {
-                document: { url: pdfUrl },
-                mimetype: 'application/pdf',
-                fileName: `DAR-${darId}.pdf`
-              });
-            } else if (pdfBuffer) {
-              await sock.sendMessage(jid, {
-                document: pdfBuffer,
-                mimetype: 'application/pdf',
-                fileName: `DAR-${darId}.pdf`
-              });
-            }
-            if (linha_digitavel) {
-              await sock.sendMessage(jid, { text: `Linha digitável: ${linha_digitavel}` });
-            }
+            const pdfUrl = pdf_url || pdfLink(darId, msisdnCorrigido);
+            const resumo = darEntry.resumo || `DAR ${darId}`;
+            const mensagem = linha_digitavel
+              ? `${resumo}\nLinha digitável: ${linha_digitavel}`
+              : resumo;
+            await sock.sendMessage(jid, { text: mensagem });
+            usuarios[jid].aguardandoConfirmacaoDar = {
+              id: darId,
+              pdfUrl,
+              linha_digitavel
+            };
+            await sock.sendMessage(jid, {
+              text: 'Deseja receber o PDF desta DAR? Responda *SIM* para confirmar ou *NÃO* para cancelar.'
+            });
           } catch (e) {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
@@ -701,43 +688,18 @@ async function startBot() {
     try {
       if (usuarios[jid]?.aguardandoConfirmacaoDar) {
         const escolha = perguntaNormalizada;
-        const { id: darId } = usuarios[jid].aguardandoConfirmacaoDar;
+        const { id: darId, pdfUrl, linha_digitavel } = usuarios[jid].aguardandoConfirmacaoDar;
         if (escolha === 'sim') {
-          const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
-          try {
-            const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
-            usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            let pdfUrl = null;
-            let pdfBuffer = null;
-            if (pdf_url) {
-              if (/^https?:\/\//i.test(pdf_url)) {
-                pdfUrl = pdf_url;
-              } else {
-                pdfBuffer = Buffer.from(pdf_url, 'base64');
-              }
-            } else {
-              pdfUrl = pdfLink(darId, msisdnCorrigido);
-            }
-            if (pdfUrl) {
-              await sock.sendMessage(jid, {
-                document: { url: pdfUrl },
-                mimetype: 'application/pdf',
-                fileName: `DAR-${darId}.pdf`
-              });
-            } else if (pdfBuffer) {
-              await sock.sendMessage(jid, {
-                document: pdfBuffer,
-                mimetype: 'application/pdf',
-                fileName: `DAR-${darId}.pdf`
-              });
-            }
-            let resposta = `DAR ${darId} emitida.`;
-            if (linha_digitavel) resposta += `\nLinha digitável: ${linha_digitavel}`;
-            await sock.sendMessage(jid, { text: resposta });
-
-          } catch (e) {
-            await sock.sendMessage(jid, { text: `Falha ao emitir DAR: ${e.message}` });
+          if (pdfUrl) {
+            await sock.sendMessage(jid, {
+              document: { url: pdfUrl },
+              mimetype: 'application/pdf',
+              fileName: `DAR-${darId}.pdf`
+            });
           }
+          let resposta = `DAR ${darId} emitida.`;
+          if (linha_digitavel) resposta += `\nLinha digitável: ${linha_digitavel}`;
+          await sock.sendMessage(jid, { text: resposta });
           delete usuarios[jid].aguardandoConfirmacaoDar;
           delete usuarios[jid].darMap;
           return;
@@ -746,8 +708,11 @@ async function startBot() {
           try {
             const { data: payload, msisdnCorrigido } = await apiGetDars(msisdnBase);
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
-            const texto = await montarTextoResposta(msisdnCorrigido, payload);
+            const { texto, mapa, mostradas } = await montarTextoResposta(msisdnCorrigido, payload);
             await sock.sendMessage(jid, { text: texto });
+            usuarios[jid].darMap = mapa;
+            usuarios[jid].darPayload = payload;
+            usuarios[jid].darOffsets = mostradas;
           } catch (e) {
             await sock.sendMessage(jid, { text: `Tive um problema ao consultar suas DARs: ${e.message}` });
 
