@@ -158,13 +158,33 @@ async function apiEmitDar(darId, msisdn, retry = 0){
 function pdfLink(darId, msisdn){
   return `${ADMIN_API_BASE}/api/bot/dars/${darId}/pdf?msisdn=${msisdn}`;
 }
+function normalizeDar(d = {}){
+  const id = d.id ?? d.numero_documento ?? d.numero;
+  let mes = d.mes_referencia, ano = d.ano_referencia;
+  if ((mes == null || ano == null) && d.competencia){
+    const m = String(d.competencia).match(/(\d{1,2})[\/-](\d{4})/);
+    if (m){
+      mes ??= m[1];
+      ano ??= m[2];
+    }
+  }
+  const data_vencimento = d.data_vencimento || d.vencimento;
+  const valor = d.valor ?? d.valor_total ?? d.total;
+  return { ...d, id, mes, ano, data_vencimento, valor };
+}
 function darResumo(d){
-  const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
-  return `Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
+  const nd = normalizeDar(d);
+  const comp = nd.mes && nd.ano ? `${String(nd.mes).padStart(2,'0')}/${nd.ano}` : 'N/D';
+  const venc = nd.data_vencimento ? brDate(nd.data_vencimento) : 'N/D';
+  const valor = nd.valor != null ? brMoney(nd.valor) : 'N/D';
+  return `Comp.: ${comp} | Venc.: ${venc} | Valor: ${valor}`;
 }
 function formatDarLine(d){
-  const comp = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
-  return `• Comp.: ${comp} | Venc.: ${brDate(d.data_vencimento)} | Valor: ${brMoney(d.valor)}`;
+  const nd = normalizeDar(d);
+  const comp = nd.mes && nd.ano ? `${String(nd.mes).padStart(2,'0')}/${nd.ano}` : 'N/D';
+  const venc = nd.data_vencimento ? brDate(nd.data_vencimento) : 'N/D';
+  const valor = nd.valor != null ? brMoney(nd.valor) : 'N/D';
+  return `• Comp.: ${comp} | Venc.: ${venc} | Valor: ${valor}`;
 }
 async function montarTextoResposta(msisdn, payload, {
   offsetVig = 0,
@@ -186,9 +206,10 @@ async function montarTextoResposta(msisdn, payload, {
       linhas.push('🔷 *DARs vigentes*');
       let mostradasVig = 0;
       for (const d of vigentesArr.slice(offsetVig, offsetVig + limit)) {
-        const txt = await formatDarLine(msisdn, d);
+        const nd = normalizeDar(d);
+        const txt = await formatDarLine(d);
         linhas.push(txt.replace(/^•/, `${contador})`));
-        mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+        mapa[contador++] = { id: nd.id, resumo: darResumo(d) };
         mostradasVig++;
       }
       const restVig = vigentesArr.length - (offsetVig + mostradasVig);
@@ -205,9 +226,10 @@ async function montarTextoResposta(msisdn, payload, {
       linhas.push(`\n🔻 *DARs vencidas*`);
       let mostradasVenc = 0;
       for (const d of vencidasArr.slice(offsetVenc, offsetVenc + limit)) {
-        const txt = await formatDarLine(msisdn, d);
+        const nd = normalizeDar(d);
+        const txt = await formatDarLine(d);
         linhas.push(txt.replace(/^•/, `${contador})`));
-        mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+        mapa[contador++] = { id: nd.id, resumo: darResumo(d) };
         mostradasVenc++;
       }
       const restVenc = vencidasArr.length - (offsetVenc + mostradasVenc);
@@ -233,9 +255,10 @@ async function montarTextoResposta(msisdn, payload, {
         linhas.push('  🔷 *DARs vigentes*');
         let mostradasVig = 0;
         for (const d of vigArr.slice(0,2)) {
-          const txt = await formatDarLine(msisdn, d);
+          const nd = normalizeDar(d);
+          const txt = await formatDarLine(d);
           linhas.push(txt.replace(/^•/, `${contador})`));
-          mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+          mapa[contador++] = { id: nd.id, resumo: darResumo(d) };
           mostradasVig++;
         }
         if (vigArr.length > 2){
@@ -249,10 +272,11 @@ async function montarTextoResposta(msisdn, payload, {
       if (venc.length){
         linhas.push(`  🔻 *DARs vencidas* (${venc.length})`);
         for (const d of venc.slice(0,2)) {
-          const txt = await formatDarLine(msisdn, d);
+          const nd = normalizeDar(d);
+          const txt = await formatDarLine(d);
 
           linhas.push(txt.replace(/^•/, `${contador})`));
-          mapa[contador++] = { id: d.id, resumo: darResumo(d) };
+          mapa[contador++] = { id: nd.id, resumo: darResumo(d) };
         }
         if (venc.length > 2) linhas.push(`  (+${venc.length-2} outras) – responda 'mais' para ver todas`);
       } else {
@@ -298,13 +322,14 @@ function montarLinkPDF(pdf_url){
 }
 
 function formatarDAR(d){
-  const competencia = `${String(d.mes_referencia).padStart(2,'0')}/${d.ano_referencia}`;
-  const venc = new Date(d.data_vencimento).toLocaleDateString('pt-BR');
-  const valor = Number(d.valor||0).toFixed(2).replace('.', ',');
+  const nd = normalizeDar(d);
+  const competencia = nd.mes && nd.ano ? `${String(nd.mes).padStart(2,'0')}/${nd.ano}` : 'N/D';
+  const venc = nd.data_vencimento ? brDate(nd.data_vencimento) : 'N/D';
   const link = montarLinkPDF(d.pdf_url);
+  const valorStr = nd.valor != null ? `R$ ${Number(nd.valor).toFixed(2).replace('.', ',')}` : 'N/D';
   return (
     `• Comp.: ${competencia} | Venc.: ${venc}\n` +
-    `  Valor: R$ ${valor}\n` +
+    `  Valor: ${valorStr}\n` +
     (d.linha_digitavel ? `  Linha digitável: ${d.linha_digitavel}\n` : '') +
     (link ? `  Baixar: ${link}` : `  PDF ainda não disponível`)
   );
