@@ -146,7 +146,28 @@ async function apiEmitDar(darId, msisdn, retry = 0){
   });
   const data = await r.json().catch(() => ({}));
   const dar = data?.dar || data?.data?.dar || data?.data || data;
-  const { linha_digitavel, pdf_url, competencia, vencimento, valor } = dar || {};
+  let {
+    linha_digitavel,
+    pdf_url,
+    competencia,
+    vencimento,
+    valor,
+    mes_referencia,
+    ano_referencia,
+    data_vencimento
+  } = dar || {};
+
+  if (!competencia && mes_referencia != null && ano_referencia != null) {
+    competencia = `${String(mes_referencia).padStart(2, '0')}/${ano_referencia}`;
+  }
+
+  if (!vencimento && data_vencimento) {
+    vencimento = data_vencimento;
+  }
+
+  if (valor == null) {
+    valor = dar?.valor_total ?? dar?.total;
+  }
 
   const ensureFields = () => {
     if (!linha_digitavel || !competencia || !vencimento || valor == null) {
@@ -830,6 +851,10 @@ async function main() {
   });
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { apiEmitDar };
 
 // (sem lógica de desligamento gracioso)
