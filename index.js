@@ -250,6 +250,7 @@ async function montarTextoResposta(msisdn, payload, {
     } else if (offsetVenc === 0){
       linhas.push('✅ Sem DARs vencidas.');
     }
+    linhas.push("Envie o número correspondente para receber os dados da DAR ou digite 'sair' para encerrar.");
     return { texto: linhas.join('\n'), mapa, mostradas: { vig: offsetVig, venc: offsetVenc } };
   }
 
@@ -294,6 +295,7 @@ async function montarTextoResposta(msisdn, payload, {
       }
       linhas.push('');
     }
+    linhas.push("Envie o número correspondente para receber os dados da DAR ou digite 'sair' para encerrar.");
     return { texto: linhas.join('\n'), mapa };
   }
   return { texto: 'Não localizei DARs para este número.', mapa };
@@ -585,6 +587,7 @@ async function startBot() {
       const pedeVigente  = /vigent|atual|corrente|m[eê]s/i.test(textoLow);
 
       if (pedeDAR || pedeVencidas || pedeVigente) {
+        await sock.sendMessage(jid, { text: "Certo! Vou consultar suas DARs. Depois, envie o número correspondente para receber os dados ou digite 'sair' para encerrar." });
         const msisdnOrig = msisdnFromJid(jid);
         try {
           const { data: payload, msisdnCorrigido } = await apiGetDars(msisdnOrig);
