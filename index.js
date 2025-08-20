@@ -566,7 +566,7 @@ async function startBot() {
         return;
       }
 
-      const pedeDAR = /\b(dar|boleto|2.?via|segunda via)\b/i.test(textoLow);
+      const pedeDAR = /\b(dar(?:s)?|boleto|2.?ª? via|segunda via|guia(?: de pagamento)?|pagamento (?:do aluguel|de eventos)|pagamento)\b/i.test(textoLow);
       const pedeVencidas = /vencid|atrasad|pendent/i.test(textoLow);
       const pedeVigente  = /vigent|atual|corrente|m[eê]s/i.test(textoLow);
 
