@@ -145,20 +145,28 @@ async function apiEmitDar(darId, msisdn, retry = 0){
     method: 'POST', headers: apiHeaders()
   });
   const data = await r.json().catch(() => ({}));
-  const dar = data?.dar || data;
-  const { linha_digitavel, pdf_url, competencia, vencimento, valor } = dar;
+  const dar = data?.dar || data?.data?.dar || data?.data || data;
+  const { linha_digitavel, pdf_url, competencia, vencimento, valor } = dar || {};
+
+  const ensureFields = () => {
+    if (!linha_digitavel || !competencia || !vencimento || valor == null) {
+      throw new Error('Falha ao obter dados da DAR');
+    }
+    return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
+  };
+
   if (!r.ok){
     const errMsg = data?.error || `Falha ao emitir DAR ${darId}`;
     if (/dar j[aá] emitid/i.test(errMsg)) {
       // DAR já emitido: tratar como sucesso e retornar campos
-      return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
+      return ensureFields();
     }
     if (retry === 0 && msisdn.length === 12 && /associado a nenhum/i.test(errMsg)) {
       return apiEmitDar(darId, msisdn.slice(0,4) + '9' + msisdn.slice(4), 1);
     }
     throw new Error(errMsg);
   }
-  return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
+  return ensureFields();
 }
 function normalizeDar(d = {}){
   const id = d.id ?? d.numero_documento ?? d.numero;
@@ -531,15 +539,15 @@ async function startBot() {
             const resumo = darEntry.resumo || `DAR ${darId}`;
             const mensagem = [
               resumo,
-              `Competência: ${competencia || '-'}`,
-              `Vencimento: ${vencimento ? brDate(vencimento) : '-'}`,
+              `Competência: ${competencia}`,
+              `Vencimento: ${brDate(vencimento)}`,
               `Valor: ${brMoney(valor)}`,
-              `Linha digitável: ${linha_digitavel || '-'}`,
+              `Linha digitável: ${linha_digitavel}`,
               'O PDF pode ser baixado através do Portal do CIPT.'
             ].join('\n');
             await sock.sendMessage(jid, { text: mensagem });
           } catch (e) {
-            await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
+            await sock.sendMessage(jid, { text: `Não foi possível recuperar a DAR selecionada: ${e.message}` });
           }
         } else {
           await sock.sendMessage(jid, { text: 'DAR não disponível' });
@@ -706,15 +714,15 @@ async function startBot() {
           if (!pdf_url) console.error(`pdf_url ausente para DAR ${darId}`);
           const msg = [
             `DAR ${darId}`,
-            `Competência: ${competencia || '-'}`,
-            `Vencimento: ${vencimento ? brDate(vencimento) : '-'}`,
+            `Competência: ${competencia}`,
+            `Vencimento: ${brDate(vencimento)}`,
             `Valor: ${brMoney(valor)}`,
-            `Linha digitável: ${linha_digitavel || '-'}`,
+            `Linha digitável: ${linha_digitavel}`,
             'O PDF pode ser baixado através do Portal do CIPT.'
           ].join('\n');
           await sock.sendMessage(jid, { text: msg });
         } catch (e) {
-          await sock.sendMessage(jid, { text: `Não consegui emitir a DAR ${darId}: ${e.message}` });
+          await sock.sendMessage(jid, { text: `Não foi possível recuperar a DAR ${darId}: ${e.message}` });
         }
         return;
       }
