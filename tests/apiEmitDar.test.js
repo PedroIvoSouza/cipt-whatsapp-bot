@@ -2,8 +2,18 @@ const assert = require('assert');
 const path = require('path');
 const Module = require('module');
 
-function loadApiEmitDar(response) {
-  const fetchMock = async () => ({ ok: true, json: async () => response });
+function loadApiEmitDar(responses) {
+  const calls = [];
+  let i = 0;
+  const fetchMock = async (...args) => {
+    calls.push(args);
+    const resp = Array.isArray(responses)
+      ? responses[Math.min(i++, responses.length - 1)]
+      : responses;
+    const ok = resp.ok !== false;
+    const body = resp.body ?? resp;
+    return { ok, json: async () => body };
+  };
   const indexPath = path.resolve(__dirname, '..', 'index.js');
   const originalRequire = Module.prototype.require;
 
@@ -38,6 +48,7 @@ function loadApiEmitDar(response) {
   const { apiEmitDar } = require(indexPath);
   Module.prototype.require = originalRequire;
   delete require.cache[indexPath];
+  apiEmitDar.fetchCalls = calls;
   return apiEmitDar;
 }
 
@@ -100,6 +111,37 @@ function loadApiEmitDar(response) {
     valor: 100,
     msisdnCorrigido: '5511999999999'
   });
+
+  apiEmitDar = loadApiEmitDar([
+    { ok: false, body: { error: 'DAR já emitida' } },
+    { ok: true, body: { dar: {
+      linha_digitavel: '999',
+      pdf_url: 'http://ja',
+      mes_referencia: 9,
+      ano_referencia: 2024,
+      data_vencimento: '2024-09-10',
+      valor_total: 125
+    } } }
+  ]);
+  res = await apiEmitDar('4', '5511999999999');
+  assert.deepStrictEqual(res, {
+    linha_digitavel: '999',
+    pdf_url: 'http://ja',
+    competencia: '09/2024',
+    vencimento: '2024-09-10',
+    valor: 125,
+    msisdnCorrigido: '5511999999999'
+  });
+  assert.strictEqual(apiEmitDar.fetchCalls.length, 2);
+
+  apiEmitDar = loadApiEmitDar([
+    { ok: false, body: { error: 'DAR já emitida' } },
+    { ok: true, body: {} }
+  ]);
+  await assert.rejects(
+    () => apiEmitDar('5', '5511999999999'),
+    /sem dados retornados/
+  );
 
   console.log('All apiEmitDar tests passed');
 })();

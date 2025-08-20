@@ -141,60 +141,75 @@ async function apiGetDars(msisdn, retry = 0){
 
 // ✅ AJUSTADO: msisdn na query string
 async function apiEmitDar(darId, msisdn, retry = 0){
+  const extract = (payload = {}) => {
+    const dar = payload?.dar || payload?.data?.dar || payload?.data || payload;
+    let {
+      linha_digitavel,
+      pdf_url,
+      competencia,
+      vencimento,
+      valor,
+      mes_referencia,
+      mesReferencia,
+      ano_referencia,
+      anoReferencia,
+      data_vencimento,
+      dataVencimento,
+      valor_total,
+      valorTotal
+    } = dar || {};
+
+    if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
+      const mes = mes_referencia ?? mesReferencia;
+      const ano = ano_referencia ?? anoReferencia;
+      competencia = `${String(mes).padStart(2, '0')}/${ano}`;
+    }
+
+    if (!vencimento && (data_vencimento || dataVencimento)) {
+      vencimento = data_vencimento || dataVencimento;
+    }
+
+    if (valor == null) {
+      valor = valor_total ?? valorTotal ?? dar?.total;
+    }
+
+    return { linha_digitavel, pdf_url, competencia, vencimento, valor };
+  };
+
+  const ensureFields = (obj) => {
+    const { linha_digitavel, competencia, vencimento, valor } = obj;
+    if (!linha_digitavel || !competencia || !vencimento || valor == null) {
+      throw new Error('Falha ao obter dados da DAR');
+    }
+    return { ...obj, msisdnCorrigido: msisdn };
+  };
+
   const r = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, {
     method: 'POST', headers: apiHeaders()
   });
   const data = await r.json().catch(() => ({}));
-  const dar = data?.dar || data?.data?.dar || data?.data || data;
-  let {
-    linha_digitavel,
-    pdf_url,
-    competencia,
-    vencimento,
-    valor,
-    mes_referencia,
-    mesReferencia,
-    ano_referencia,
-    anoReferencia,
-    data_vencimento,
-    dataVencimento,
-    valor_total,
-    valorTotal
-  } = dar || {};
-
-  if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
-    const mes = mes_referencia ?? mesReferencia;
-    const ano = ano_referencia ?? anoReferencia;
-    competencia = `${String(mes).padStart(2, '0')}/${ano}`;
-  }
-
-  if (!vencimento && (data_vencimento || dataVencimento)) {
-    vencimento = data_vencimento || dataVencimento;
-  }
-
-  if (valor == null) {
-    valor = valor_total ?? valorTotal ?? dar?.total;
-  }
-
-  const ensureFields = () => {
-    if (!linha_digitavel || !competencia || !vencimento || valor == null) {
-      throw new Error('Falha ao obter dados da DAR');
-    }
-    return { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido: msisdn };
-  };
+  let fields = extract(data);
 
   if (!r.ok){
     const errMsg = data?.error || `Falha ao emitir DAR ${darId}`;
     if (/dar j[aá] emitid/i.test(errMsg)) {
-      // DAR já emitido: tratar como sucesso e retornar campos
-      return ensureFields();
+      // DAR já emitido: tentar obter dados existentes
+      if (!fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
+        const r2 = await fetch(`${ADMIN_API_BASE}/api/bot/dars/${darId}?msisdn=${msisdn}`, { headers: apiHeaders() });
+        const data2 = await r2.json().catch(() => ({}));
+        fields = extract(data2);
+        if (!r2.ok || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
+          throw new Error('DAR já emitida, mas sem dados retornados');
+        }
+      }
+      return ensureFields(fields);
     }
     if (retry === 0 && msisdn.length === 12 && /associado a nenhum/i.test(errMsg)) {
       return apiEmitDar(darId, msisdn.slice(0,4) + '9' + msisdn.slice(4), 1);
     }
     throw new Error(errMsg);
   }
-  return ensureFields();
+  return ensureFields(fields);
 }
 function normalizeDar(d = {}){
   const id = d.id ?? d.numero_documento ?? d.numero;
