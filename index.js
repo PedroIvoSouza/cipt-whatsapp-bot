@@ -16,6 +16,7 @@ const OpenAI = require('openai');
 const axios = require('axios');
 const cron = require('node-cron');
 const sqlite3 = require('sqlite3').verbose(); // <- NOVO
+const axios = require('axios'); // <- ADIÇÃO
 const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado, verificarChamadosAbertos } = require("./sheetsChamados");
 
@@ -145,104 +146,138 @@ async function apiGetDars(msisdn, retry = 0){
   return { data, msisdnCorrigido: msisdn };
 }
 
-// ✅ AJUSTADO: msisdn na query string
-async function apiEmitDar(darId, msisdn, retry = 0){
-  const extract = (payload = {}) => {
-    let dar =
-      payload?.dar ||
-      payload?.data?.dar ||
-      payload?.dados?.dar ||
-      payload?.data ||
-      payload?.dados ||
-      payload;
-    // Algumas respostas podem retornar a DAR dentro de arrays ou em níveis extras
-    if (Array.isArray(dar)) dar = dar[0];
-    if (dar?.dar) dar = dar.dar;
-    let {
-      linha_digitavel,
-      linhaDigitavel,
-      pdf_url,
-      pdfUrl,
-      competencia,
-      vencimento,
-      valor,
-      mes_referencia,
-      mesReferencia,
-      ano_referencia,
-      anoReferencia,
-      data_vencimento,
-      dataVencimento,
-      valor_total,
-      valorTotal,
-    } = dar || {};
+// ==================== API BOT CLIENT (axios) — NOVO BLOCO ====================
+const api = axios.create({ baseURL: ADMIN_API_BASE });
+api.interceptors.request.use((config) => {
+  config.headers = { ...(config.headers || {}), ...apiHeaders() };
+  return config;
+});
 
-    linha_digitavel = linha_digitavel || linhaDigitavel;
-    pdf_url = pdf_url || pdfUrl;
+/**
+ * Extrai campos da DAR em respostas com formatos variados
+ */
+function extractDar(payload = {}) {
+  let dar =
+    payload?.dar ||
+    payload?.data?.dar ||
+    payload?.dados?.dar ||
+    payload?.data ||
+    payload?.dados ||
+    payload;
 
-    if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
-      const mes = mes_referencia ?? mesReferencia;
-      const ano = ano_referencia ?? anoReferencia;
-      competencia = `${String(mes).padStart(2, '0')}/${ano}`;
-    }
+  if (Array.isArray(dar)) dar = dar[0];
+  if (dar?.dar) dar = dar.dar;
 
-    if (!vencimento && (data_vencimento || dataVencimento)) {
-      vencimento = data_vencimento || dataVencimento;
-    }
+  let {
+    linha_digitavel,
+    linhaDigitavel,
+    pdf_url,
+    pdfUrl,
+    competencia,
+    vencimento,
+    valor,
+    mes_referencia,
+    mesReferencia,
+    ano_referencia,
+    anoReferencia,
+    data_vencimento,
+    dataVencimento,
+    valor_total,
+    valorTotal,
+  } = dar || {};
 
-    if (valor == null) {
-      valor = valor_total ?? valorTotal ?? dar?.total;
-    }
+  linha_digitavel = linha_digitavel || linhaDigitavel;
+  pdf_url = pdf_url || pdfUrl;
 
-    return { linha_digitavel, pdf_url, competencia, vencimento, valor };
-  };
-
-  const ensureFields = (obj) => {
-    const { linha_digitavel, competencia, vencimento, valor } = obj;
-    if (!linha_digitavel || !competencia || !vencimento || valor == null) {
-      throw new Error('Falha ao obter dados da DAR');
-    }
-    return { ...obj, msisdnCorrigido: msisdn };
-  };
-
-  const r = await axios.post(`${ADMIN_API_BASE}/api/bot/dars/${darId}/emit?msisdn=${msisdn}`, null, {
-    headers: apiHeaders(),
-    validateStatus: () => true,
-  });
-  const data = r.data || {};
-  let fields = extract(data);
-
-  const ok = r.status >= 200 && r.status < 300;
-  if (!ok){
-    const errMsg = data?.error || `Falha ao emitir DAR ${darId}`;
-    if (/dar j[aá] emitid/i.test(errMsg)) {
-      // DAR já emitido: tentar obter dados existentes
-      if (!fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
-        const baseUrl = `${ADMIN_API_BASE}/api/bot/dars/${darId}`;
-        let r2 = await axios.get(`${baseUrl}?msisdn=${msisdn}`, { headers: apiHeaders(), validateStatus: () => true });
-        let data2 = r2.data || {};
-        fields = extract(data2);
-        const ok2 = r2.status >= 200 && r2.status < 300;
-        if (!ok2 || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
-          console.error('Fallback DAR fetch with msisdn failed or incomplete:', data2);
-          r2 = await axios.get(baseUrl, { headers: apiHeaders(), validateStatus: () => true });
-          data2 = r2.data || {};
-          fields = extract(data2);
-          const ok3 = r2.status >= 200 && r2.status < 300;
-          if (!ok3 || !fields.linha_digitavel || !fields.competencia || !fields.vencimento || fields.valor == null) {
-            console.error('Fallback DAR fetch without msisdn failed or incomplete:', data2);
-            throw new Error('DAR já emitida, mas sem dados retornados');
-          }
-        }
-      }
-      return ensureFields(fields);
-    }
-    if (retry === 0 && msisdn.length === 12 && /associado a nenhum/i.test(errMsg)) {
-      return apiEmitDar(darId, msisdn.slice(0,4) + '9' + msisdn.slice(4), 1);
-    }
-    throw new Error(errMsg);
+  if (!competencia && (mes_referencia ?? mesReferencia) != null && (ano_referencia ?? anoReferencia) != null) {
+    const mes = mes_referencia ?? mesReferencia;
+    const ano = ano_referencia ?? anoReferencia;
+    competencia = `${String(mes).padStart(2, '0')}/${ano}`;
   }
-  return ensureFields(fields);
+
+  if (!vencimento && (data_vencimento || dataVencimento)) {
+    vencimento = data_vencimento || dataVencimento;
+  }
+
+  if (valor == null) {
+    valor = valor_total ?? valorTotal ?? dar?.total;
+  }
+
+  return { linha_digitavel, pdf_url, competencia, vencimento, valor };
 }
+
+function ensureFields(obj, msisdn) {
+  const { linha_digitavel, competencia, vencimento, valor } = obj || {};
+  if (!linha_digitavel || !competencia || !vencimento || valor == null) {
+    throw new Error('Falha ao obter dados da DAR');
+  }
+  return { ...obj, msisdnCorrigido: msisdn };
+}
+
+
+/**
+ * Emite a DAR. Se já emitida (409), consulta a existente.
+ * Mantém a mesma assinatura usada no restante do bot.
+ *
+ * @param {number|string} darId
+ * @param {string} msisdn
+ * @param {number} retry
+ */
+async function apiEmitDar(darId, msisdn, retry = 0) {
+  // 1) tenta POST com msisdn no corpo
+  try {
+    const res = await api.post(`/api/bot/dars/${darId}/emit`, { msisdn });
+    const fields = extractDar(res.data);
+    return ensureFields(fields, msisdn);
+  } catch (errBody) {
+    const status = errBody.response?.status;
+    const data = errBody.response?.data;
+    const msg = data?.error || errBody.message || 'Falha ao emitir DAR';
+
+    // Alguns backends esperam msisdn na query. Tenta de novo.
+    if (!status || status === 400) {
+      try {
+        const resQ = await api.post(`/api/bot/dars/${darId}/emit`, null, { params: { msisdn } });
+        const fieldsQ = extractDar(resQ.data);
+        return ensureFields(fieldsQ, msisdn);
+      } catch (errQuery) {
+        // prossegue para os próximos tratamentos
+        errBody._fallbackQueryErr = errQuery;
+      }
+    }
+
+    // 409 -> já emitida: consulta com msisdn e, se vier incompleto, sem msisdn
+    if (status === 409 || /dar j[aá] emitid/i.test(msg)) {
+      try {
+        let resGet = await api.get(`/api/bot/dars/${darId}`, { params: { msisdn } });
+        let fields = extractDar(resGet.data);
+        try {
+          return ensureFields(fields, msisdn);
+        } catch {
+          // tentar novamente sem msisdn
+          resGet = await api.get(`/api/bot/dars/${darId}`);
+          fields = extractDar(resGet.data);
+          return ensureFields(fields, msisdn);
+        }
+      } catch (consultaErr) {
+        // retorna erro original
+        const sMsg = sanitizeSensitive(msg);
+        throw new Error(sMsg);
+      }
+    }
+
+    // Heurística de MSISDN (inserir 9 após DDI+DDD se a API reclamar de associação)
+    if (retry === 0 && msisdn?.length === 12 && /associado a nenhum/i.test(msg)) {
+      const corrigido = msisdn.slice(0, 4) + '9' + msisdn.slice(4);
+      return apiEmitDar(darId, corrigido, 1);
+    }
+
+    const sMsg = sanitizeSensitive(msg);
+    throw new Error(sMsg);
+  }
+}
+// ==================== FIM DO BLOCO NOVO ====================
+
 function normalizeDar(d = {}){
   const id = d.id ?? d.numero_documento ?? d.numero;
   let mes = d.mes_referencia ?? d.mesReferencia;
