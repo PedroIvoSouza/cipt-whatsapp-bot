@@ -81,6 +81,26 @@ function loadApiEmitDar(response) {
     msisdnCorrigido: '5511999999999'
   });
 
+  apiEmitDar = loadApiEmitDar({
+    dar: {
+      linha_digitavel: '789',
+      pdf_url: 'http://camel',
+      mesReferencia: 8,
+      anoReferencia: 2024,
+      dataVencimento: '2024-08-15',
+      valorTotal: 100
+    }
+  });
+  res = await apiEmitDar('3', '5511999999999');
+  assert.deepStrictEqual(res, {
+    linha_digitavel: '789',
+    pdf_url: 'http://camel',
+    competencia: '08/2024',
+    vencimento: '2024-08-15',
+    valor: 100,
+    msisdnCorrigido: '5511999999999'
+  });
+
   console.log('All apiEmitDar tests passed');
 })();
 
