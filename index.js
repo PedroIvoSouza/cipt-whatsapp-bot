@@ -553,7 +553,7 @@ async function startBot() {
           }
           delete usuarios[jid].aguardandoConfirmacaoDar;
         } else if (/^(nao|não)$/i.test(pergunta)) {
-          await sock.sendMessage(jid, { text: 'Tudo bem, não enviarei o PDF. Se desejar outra DAR, responda com o número ou digite "mais".' });
+          await sock.sendMessage(jid, { text: 'Tudo bem, não enviarei o PDF. Se desejar outra DAR, responda com o número ou digite "mais". Para encerrar, envie "sair".' });
           delete usuarios[jid].aguardandoConfirmacaoDar;
         } else {
           await sock.sendMessage(jid, { text: 'Por favor, responda *SIM* ou *NÃO*.' });
