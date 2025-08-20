@@ -5,20 +5,30 @@ const Module = require('module');
 function loadApiEmitDar(responses) {
   const calls = [];
   let i = 0;
-  const fetchMock = async (...args) => {
-    calls.push(args);
-    const resp = Array.isArray(responses)
-      ? responses[Math.min(i++, responses.length - 1)]
-      : responses;
-    const ok = resp.ok !== false;
-    const body = resp.body ?? resp;
-    return { ok, json: async () => body };
+  const nextResp = () => Array.isArray(responses)
+    ? responses[Math.min(i++, responses.length - 1)]
+    : responses;
+  const axiosMock = {
+    get: async (url, config = {}) => {
+      calls.push({ method: 'get', url, config });
+      const resp = nextResp();
+      const status = resp.status ?? (resp.ok === false ? 400 : 200);
+      const data = resp.body ?? resp;
+      return { status, data };
+    },
+    post: async (url, data = null, config = {}) => {
+      calls.push({ method: 'post', url, data, config });
+      const resp = nextResp();
+      const status = resp.status ?? (resp.ok === false ? 400 : 200);
+      const respData = resp.body ?? resp;
+      return { status, data: respData };
+    }
   };
   const indexPath = path.resolve(__dirname, '..', 'index.js');
   const originalRequire = Module.prototype.require;
 
   Module.prototype.require = function (moduleName) {
-    if (moduleName === 'node-fetch') return fetchMock;
+    if (moduleName === 'axios') return axiosMock;
     if (moduleName === 'express') {
       const fn = () => ({ get(){}, listen(){}, use(){} });
       fn.json = () => (req, res, next) => next();
@@ -48,7 +58,7 @@ function loadApiEmitDar(responses) {
   const { apiEmitDar } = require(indexPath);
   Module.prototype.require = originalRequire;
   delete require.cache[indexPath];
-  apiEmitDar.fetchCalls = calls;
+  apiEmitDar.axiosCalls = calls;
   return apiEmitDar;
 }
 
@@ -132,7 +142,7 @@ function loadApiEmitDar(responses) {
     valor: 125,
     msisdnCorrigido: '5511999999999'
   });
-  assert.strictEqual(apiEmitDar.fetchCalls.length, 2);
+  assert.strictEqual(apiEmitDar.axiosCalls.length, 2);
 
   apiEmitDar = loadApiEmitDar([
     { ok: false, body: { error: 'DAR já emitida' } },
@@ -206,9 +216,9 @@ function loadApiEmitDar(responses) {
     valor: 300,
     msisdnCorrigido: '5511999999999'
   });
-  assert.strictEqual(apiEmitDar.fetchCalls.length, 3);
-  assert(apiEmitDar.fetchCalls[1][0].includes('?msisdn=5511999999999'));
-  assert(!apiEmitDar.fetchCalls[2][0].includes('msisdn'));
+  assert.strictEqual(apiEmitDar.axiosCalls.length, 3);
+  assert(apiEmitDar.axiosCalls[1].url.includes('?msisdn=5511999999999'));
+  assert(!apiEmitDar.axiosCalls[2].url.includes('msisdn'));
 
   console.log('All apiEmitDar tests passed');
 })();
