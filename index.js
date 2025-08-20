@@ -236,13 +236,22 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
     const data = errBody.response?.data;
     const msg = data?.error || errBody.message || 'Falha ao emitir DAR';
 
-    // 409 -> já emitida: consulta usando numero_documento
+    // 409 -> já emitida: consulta usando o próprio darId
     if (status === 409 || /dar j[aá] emitid/i.test(msg)) {
       try {
-        const resGet = await api.get('/api/bot/dars', {
-          params: { numero_documento: darId, msisdn },
+        const resGet = await api.get(`/api/bot/dars/${darId}`, {
+          params: { msisdn },
         });
-        return ensureFields(extract(resGet.data));
+        try {
+          return ensureFields(extract(resGet.data));
+        } catch (e) {
+          console.error('Consulta GET falhou:', resGet.status, resGet.data);
+          if (/Campos ausentes/i.test(e.message)) {
+            throw new Error('sem dados retornados');
+          }
+          const sMsg = sanitizeSensitive(e.message);
+          throw new Error(sMsg);
+        }
       } catch (consultaErr) {
         const status = consultaErr.response?.status;
         const data = consultaErr.response?.data;
@@ -250,9 +259,6 @@ async function apiEmitDar(darId, msisdn, retry = 0) {
           console.error('Consulta GET falhou:', status, data);
         } else {
           console.error('Consulta GET falhou:', consultaErr.message);
-        }
-        if (/Campos ausentes/i.test(consultaErr.message)) {
-          throw new Error('sem dados retornados');
         }
         const sMsg = sanitizeSensitive(data?.error || consultaErr.message);
         throw new Error(sMsg);
