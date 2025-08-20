@@ -513,11 +513,11 @@ async function startBot() {
     // ✅ NOVA LÓGICA: DARs por WhatsApp (antes de qualquer early-return)
     const textoLow = (corpoMensagem || '').toLowerCase();
     if (!(isGroup && !textoLow.includes('@bot'))) {
-      const numeroEscolhido = pergunta.trim();
-      if (/^\d+$/.test(numeroEscolhido) && usuarios[jid]?.darMap) {
+      const numeroEscolhido = pergunta.match(/\d+/)?.[0];
+      if (numeroEscolhido && usuarios[jid]?.darMap) {
         const darEntry = usuarios[jid].darMap[numeroEscolhido];
-        if (darEntry) {
-          const darId = typeof darEntry === 'object' ? darEntry.id : darEntry;
+        if (darEntry?.id) {
+          const darId = darEntry.id;
           const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
           try {
             const { linha_digitavel, pdf_url, msisdnCorrigido } = await apiEmitDar(darId, msisdnBase);
@@ -537,9 +537,10 @@ async function startBot() {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
         } else {
-          await sock.sendMessage(jid, { text: 'Opção inválida. Digite um número da lista ou "SAIR" para encerrar.' });
+          await sock.sendMessage(jid, { text: 'DAR não disponível' });
         }
-      } else if (/^mais$/i.test(numeroEscolhido) && usuarios[jid]?.darPayload) {
+        return;
+      } else if (/^mais$/i.test(pergunta) && usuarios[jid]?.darPayload) {
         const state = usuarios[jid].darOffsets || { vig: 0, venc: 0 };
         const msisdnBase = usuarios[jid]?.msisdnCorrigido || msisdnFromJid(jid);
         const { texto, mapa, mostradas } = await montarTextoResposta(msisdnBase, usuarios[jid].darPayload, {
