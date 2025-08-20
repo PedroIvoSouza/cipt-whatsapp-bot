@@ -163,7 +163,7 @@ function loadApiEmitDar(responses) {
   ]);
   await assert.rejects(
     () => apiEmitDar('5', '5511999999999'),
-    /sem dados retornados/
+    /Campos ausentes: linha_digitavel, competencia, vencimento, valor/
   );
 
   apiEmitDar = loadApiEmitDar({
