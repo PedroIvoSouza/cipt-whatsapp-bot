@@ -529,11 +529,15 @@ async function startBot() {
             usuarios[jid].msisdnCorrigido = msisdnCorrigido;
             if (!pdf_url) console.error(`pdf_url ausente para DAR ${darId}`);
             const resumo = darEntry.resumo || `DAR ${darId}`;
-            const mensagem = linha_digitavel
-              ? `${resumo}\nLinha digitável: ${linha_digitavel}`
-              : resumo;
+            const mensagem = [
+              resumo,
+              `Competência: ${competencia || '-'}`,
+              `Vencimento: ${vencimento ? brDate(vencimento) : '-'}`,
+              `Valor: ${brMoney(valor)}`,
+              `Linha digitável: ${linha_digitavel || '-'}`,
+              'O PDF pode ser baixado através do Portal do CIPT.'
+            ].join('\n');
             await sock.sendMessage(jid, { text: mensagem });
-            usuarios[jid].darEmitida = { id: darId, competencia, vencimento, valor, linha_digitavel };
           } catch (e) {
             await sock.sendMessage(jid, { text: `Não consegui recuperar a DAR selecionada: ${e.message}` });
           }
@@ -700,9 +704,14 @@ async function startBot() {
           const { linha_digitavel, pdf_url, competencia, vencimento, valor, msisdnCorrigido } = await apiEmitDar(darId, msisdn);
           usuarios[jid].msisdnCorrigido = msisdnCorrigido;
           if (!pdf_url) console.error(`pdf_url ausente para DAR ${darId}`);
-          usuarios[jid].darEmitida = { id: darId, competencia, vencimento, valor, linha_digitavel };
-          let msg = `DAR ${darId} emitida.`;
-          if (linha_digitavel) msg += `\nLinha digitável: ${linha_digitavel}`;
+          const msg = [
+            `DAR ${darId}`,
+            `Competência: ${competencia || '-'}`,
+            `Vencimento: ${vencimento ? brDate(vencimento) : '-'}`,
+            `Valor: ${brMoney(valor)}`,
+            `Linha digitável: ${linha_digitavel || '-'}`,
+            'O PDF pode ser baixado através do Portal do CIPT.'
+          ].join('\n');
           await sock.sendMessage(jid, { text: msg });
         } catch (e) {
           await sock.sendMessage(jid, { text: `Não consegui emitir a DAR ${darId}: ${e.message}` });
