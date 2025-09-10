@@ -921,6 +921,16 @@ async function startBot() {
     }
   });
 
+  sock.ev.on('messages.update', (updates) => {
+    for (const { key, update } of updates) {
+      const status = update?.status;
+      if (status === 2 || status === 3) {
+        const id = key?.id;
+        console.log(sanitizeSensitive(`[ack][status=${status}] id=${id}`));
+      }
+    }
+  });
+
   return sock; // <- garante retorno
 }
 
@@ -1005,9 +1015,10 @@ async function main() {
           try {
             // Se preferir timeout no envio, troque a linha abaixo por:
             // await withTimeout(sock.sendMessage(targetJid, { text }), 8000);
-            await sock.sendMessage(targetJid, { text });
+            const msg = await sock.sendMessage(targetJid, { text });
+            const msgId = msg?.key?.id;
 
-            console.log(sanitizeSensitive(`[send][ok] -> ${targetJid} (${String(text).length} chars)`));
+            console.log(sanitizeSensitive(`[send][ok] -> ${targetJid} id=${msgId} (${String(text).length} chars)`));
           } catch (err) {
             console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
           } finally {
