@@ -635,6 +635,10 @@ async function enviarRelatorioDePendencias(sockInstancia) {
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   // sempre resetar o status de conexão ao (re)criar o socket
+  if (sock) {
+    try { sock.ws?.close(); } catch {}
+    try { sock.ev?.removeAllListeners?.(); } catch {}
+  }
   isConnected = false;
   sock = makeWASocket({ auth: state });
   global.sock = sock;
