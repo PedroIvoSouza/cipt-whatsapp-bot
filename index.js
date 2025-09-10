@@ -49,6 +49,34 @@ const SITE_OFICIAL = 'secti.al.gov.br';
 let embeddingsCache = [];
 let sock;
 let isConnected = false;
+let reconnectAttempts = 0;
+let reconnectTimer;
+let wsCheckInterval;
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  const delay = Math.min(30000, 5000 * 2 ** reconnectAttempts);
+  reconnectAttempts++;
+  console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms`);
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    console.log(`[reconnect] iniciando tentativa #${reconnectAttempts}`);
+    try {
+      await startBot();
+      console.log(`[reconnect] tentativa #${reconnectAttempts} concluída`);
+    } catch (e) {
+      console.error(`[reconnect] tentativa #${reconnectAttempts} falhou:`, e);
+      scheduleReconnect();
+    }
+  }, delay);
+}
+
+async function ensureConnected() {
+  if (!(isConnected && sock?.user) || sock?.ws?.readyState !== 1) {
+    console.warn('[ensureConnected] conexão ausente, tentando reconectar...');
+    scheduleReconnect();
+  }
+}
 
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
@@ -612,19 +640,38 @@ async function startBot() {
   global.sock = sock;
   sock.ev.on('creds.update', saveCreds);
 
+  sock.ws?.on('error', (err) => {
+    console.error('[ws][error]', err?.message || err);
+    isConnected = false;
+    scheduleReconnect();
+  });
+
+  if (wsCheckInterval) clearInterval(wsCheckInterval);
+  wsCheckInterval = setInterval(() => {
+    if (!sock?.ws || sock.ws.readyState !== 1) {
+      console.warn(`[reconnect][stale] readyState=${sock?.ws?.readyState}`);
+      isConnected = false;
+      scheduleReconnect();
+    }
+  }, 15000);
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
+    const err = update?.error;
     // considera aberto apenas se a conexão estiver marcada como 'open'
     isConnected = connection === 'open';
     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
-    if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
-    if (connection === 'close') {
+    if (connection === 'open') {
+      console.log('✅ Conectado ao WhatsApp!');
+      reconnectAttempts = 0;
+    }
+    if (connection === 'close' || err) {
       isConnected = false;
       const error = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = error !== DisconnectReason.loggedOut;
       console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
       if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Garanta que apenas uma instância do bot esteja rodando!");
-      if (shouldReconnect) setTimeout(startBot, 5000);
+      if (shouldReconnect) scheduleReconnect();
     }
   });
 
@@ -995,6 +1042,7 @@ async function main() {
       // --- 4) Verificar conexão com o WhatsApp via WebSocket ---
       if (!(isConnected && sock?.user)) {
         console.warn('[send][ws-nao-conectado]');
+        ensureConnected();
         return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
       }
 
@@ -1061,6 +1109,6 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { apiEmitDar };
+module.exports = { apiEmitDar, startBot, ensureConnected, getIsConnected: () => isConnected };
 
 // (sem lógica de desligamento gracioso)
