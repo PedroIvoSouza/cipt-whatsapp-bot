@@ -7,9 +7,11 @@ async function loadSendMessage() {
   const sockMock = {
     calls,
     ws: { readyState: 1 },
-    ev: { on(){} },
+    user: {},
+    ev: { on(event, handler){ if(event === 'connection.update') sockMock._connectionHandler = handler; } },
     sendMessage: async (...args) => {
       calls.push(args);
+      return { key: { id: 'mock-id' } };
     },
     onWhatsApp: async () => [{ exists: true }],
     presenceSubscribe: async () => {},
@@ -101,6 +103,9 @@ async function loadSendMessage() {
   assert.deepStrictEqual(res.jsonBody, { ok: false, erro: 'whatsapp não conectado' });
   sockMock.ws.readyState = 1;
 
+  // Simulate connection opened
+  sockMock._connectionHandler && sockMock._connectionHandler({ connection: 'open' });
+
   // Número não encontrado no WhatsApp
   sockMock.onWhatsApp = async () => [];
   res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Oi' });
@@ -110,11 +115,16 @@ async function loadSendMessage() {
   // Success case
   sockMock.onWhatsApp = async () => [{ exists: true }];
   sockMock.calls.length = 0;
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (msg) => logs.push(msg);
   res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Ola' });
   await new Promise(r => setImmediate(r));
+  console.log = originalLog;
   assert.strictEqual(res.statusCode, 202);
   assert.deepStrictEqual(sockMock.calls[0], ['5511999999999@s.whatsapp.net', { text: 'Ola' }]);
   assert.deepStrictEqual(res.jsonBody, { ok: true, queued: true, to: '5511999999999@s.whatsapp.net' });
+  assert(logs.some(l => l.includes('id=mock-id')), 'should log message id');
 
   // Erro ao enviar em background não altera resposta
   sockMock.sendMessage = async () => { throw new Error('falhou'); };
