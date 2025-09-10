@@ -987,30 +987,31 @@ async function main() {
 
       // --- 5) Verificar se o número está no WhatsApp ---
       const onWa = await sock.onWhatsApp(jid).catch(() => []);
+      const targetJid = onWa?.[0]?.jid || jid;
       const exists = Array.isArray(onWa) && onWa[0]?.exists;
       if (!exists) {
-        console.warn(`[send][whatsapp-nao-encontrado] -> ${jid}`);
+        console.warn(`[send][whatsapp-nao-encontrado] -> ${targetJid}`);
         return res.status(404).json({ ok: false, erro: 'whatsapp não encontrado' });
       }
 
       // --- 6) Responder rápido e enviar em background ---
-      res.status(202).json({ ok: true, queued: true, to: jid });
+      res.status(202).json({ ok: true, queued: true, to: targetJid });
 
       setImmediate(async () => {
         try {
-          await sock.presenceSubscribe(jid).catch(() => {});
-          await sock.sendPresenceUpdate('composing', jid).catch(() => {});
+          await sock.presenceSubscribe(targetJid).catch(() => {});
+          await sock.sendPresenceUpdate('composing', targetJid).catch(() => {});
 
           try {
             // Se preferir timeout no envio, troque a linha abaixo por:
-            // await withTimeout(sock.sendMessage(jid, { text }), 8000);
-            await sock.sendMessage(jid, { text });
+            // await withTimeout(sock.sendMessage(targetJid, { text }), 8000);
+            await sock.sendMessage(targetJid, { text });
 
-            console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
+            console.log(sanitizeSensitive(`[send][ok] -> ${targetJid} (${String(text).length} chars)`));
           } catch (err) {
             console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
           } finally {
-            await sock.sendPresenceUpdate('available', jid).catch(() => {});
+            await sock.sendPresenceUpdate('available', targetJid).catch(() => {});
           }
         } catch (err) {
           console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
