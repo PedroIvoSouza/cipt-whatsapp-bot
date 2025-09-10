@@ -6,10 +6,14 @@ async function loadSendMessage() {
   const calls = [];
   const sockMock = {
     calls,
+    ws: { readyState: 1 },
     ev: { on(){} },
     sendMessage: async (...args) => {
       calls.push(args);
-    }
+    },
+    onWhatsApp: async () => [{ exists: true }],
+    presenceSubscribe: async () => {},
+    sendPresenceUpdate: async () => {}
   };
 
   const axiosMock = {
@@ -90,18 +94,26 @@ async function loadSendMessage() {
   let res = await invoke({}, { msisdn: '123', text: 'oi' });
   assert.strictEqual(res.statusCode, 401, 'requires auth header');
 
+  // Número não encontrado no WhatsApp
+  sockMock.onWhatsApp = async () => [];
+  res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Oi' });
+  assert.strictEqual(res.statusCode, 404);
+  assert.deepStrictEqual(res.jsonBody, { ok: false, erro: 'whatsapp não encontrado' });
+
   // Success case
+  sockMock.onWhatsApp = async () => [{ exists: true }];
   sockMock.calls.length = 0;
   res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Ola' });
-  assert.strictEqual(res.statusCode, 200);
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(res.statusCode, 202);
   assert.deepStrictEqual(sockMock.calls[0], ['5511999999999@s.whatsapp.net', { text: 'Ola' }]);
-  assert.deepStrictEqual(res.jsonBody, { ok: true });
+  assert.deepStrictEqual(res.jsonBody, { ok: true, queued: true, to: '5511999999999@s.whatsapp.net' });
 
-  // Error case
+  // Erro ao enviar em background não altera resposta
   sockMock.sendMessage = async () => { throw new Error('falhou'); };
   res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Opa' });
-  assert.strictEqual(res.statusCode, 500);
-  assert.ok(/falhou/i.test(res.jsonBody.erro || ''), 'error message propagated');
+  assert.strictEqual(res.statusCode, 202);
+  assert.deepStrictEqual(res.jsonBody, { ok: true, queued: true, to: '5511999999999@s.whatsapp.net' });
 
   console.log('All sendMessage tests passed');
 })();

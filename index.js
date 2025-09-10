@@ -976,7 +976,15 @@ async function main() {
         return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
       }
 
-      // --- 5) Responder rápido e enviar em background ---
+      // --- 5) Verificar se o número está no WhatsApp ---
+      const onWa = await sock.onWhatsApp(jid).catch(() => []);
+      const exists = Array.isArray(onWa) && onWa[0]?.exists;
+      if (!exists) {
+        console.warn(`[send][whatsapp-nao-encontrado] -> ${jid}`);
+        return res.status(404).json({ ok: false, erro: 'whatsapp não encontrado' });
+      }
+
+      // --- 6) Responder rápido e enviar em background ---
       res.status(202).json({ ok: true, queued: true, to: jid });
 
       setImmediate(async () => {
