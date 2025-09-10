@@ -2,13 +2,32 @@
 // CIPT-WHATSAPP-BOT - VERSÃO DE PRODUÇÃO FINAL (COM D.A.R. via WhatsApp)
 // =================================================================================================
 
+const fs = require('fs');
+const path = require('path');
+
+const LOCK_FILE = path.join(__dirname, 'cipt-bot.lock');
+try {
+  fs.closeSync(fs.openSync(LOCK_FILE, 'wx'));
+} catch (err) {
+  if (err.code === 'EEXIST') {
+    console.error(`Lockfile ${LOCK_FILE} already exists. Another instance may be running.`);
+    process.exit(1);
+  }
+  throw err;
+}
+
+function removeLock() {
+  try { fs.unlinkSync(LOCK_FILE); } catch {}
+}
+process.on('exit', removeLock);
+process.once('SIGINT', () => { removeLock(); process.exit(0); });
+process.once('SIGTERM', () => { removeLock(); process.exit(0); });
+
 const crypto = require("node:crypto");
 global.crypto = crypto;
 
 const express = require('express');
 const dotenv = require('dotenv');
-const fs = require('fs');
-const path = require('path');
 const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
