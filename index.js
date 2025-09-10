@@ -81,6 +81,7 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
     console.log(`[reconnect] iniciando tentativa #${reconnectAttempts}`);
+    if (isConnected && sock?.ws?.readyState === 1) return;
     try {
       await startBot();
       console.log(`[reconnect] tentativa #${reconnectAttempts} concluída`);
@@ -684,6 +685,10 @@ async function startBot() {
     const err = update?.error;
     // considera aberto apenas se a conexão estiver marcada como 'open'
     isConnected = connection === 'open';
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') {
       console.log('✅ Conectado ao WhatsApp!');
