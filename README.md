@@ -57,28 +57,31 @@ Envia uma mensagem para o número especificado.
 **Exemplo de requisição**
 
 ```bash
-curl -X POST http://localhost:3000/send \
-  -H "Authorization: Bearer supersecreto" \
+curl -X POST "$WHATSAPP_BOT_URL" \
+  -H "Authorization: Bearer $WHATSAPP_BOT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"to":"5582999999999","message":"Olá!"}'
+  -d '{"msisdn":"5582999999999","text":"Olá!"}'
 ```
 
 **Resposta**
 
 ```json
-{ "success": true }
+{ "ok": true }
 ```
 
 ### Variáveis de ambiente
 
 ```
 WHATSAPP_BOT_TOKEN=supersecreto
+WHATSAPP_BOT_URL=https://seu-servico.onrender.com/send
 #BOT_AUTH_DEBUG=true
 ```
 
-`WHATSAPP_BOT_TOKEN` define o token aceito pelo middleware de autenticação. Defina `BOT_AUTH_DEBUG` como `true` para habilitar logs de depuração.
+`WHATSAPP_BOT_TOKEN` define o token aceito pelo middleware de autenticação. `WHATSAPP_BOT_URL` indica a URL pública do endpoint `POST /send` (ao usar Render, será algo como `https://seu-servico.onrender.com/send`). Defina `BOT_AUTH_DEBUG` como `true` para habilitar logs de depuração.
 
 ## Executando
+
+Este projeto inicia um servidor Express escutando em `process.env.PORT` (padrão `10000` no Render).
 
 ```bash
 npm start
