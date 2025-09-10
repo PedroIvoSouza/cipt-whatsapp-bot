@@ -939,7 +939,16 @@ async function main() {
   const SEND_TOKEN = process.env.WHATSAPP_BOT_TOKEN || process.env.BOT_SHARED_KEY;
 
   // healthcheck
-  app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
+  app.get('/', (req, res) => {
+    const isConnected = sock?.ws?.readyState === 1; // 1 = OPEN
+    if (req.accepts('json')) {
+      return res.json({ ok: true, connected: isConnected });
+    }
+    const html = isConnected
+      ? '<p>✅ Bot do CIPT está online!</p>'
+      : '<p>⏳ Bot ainda está inicializando...</p>';
+    res.send(html);
+  });
 
   // envio de mensagens
   app.post('/send', async (req, res) => {
