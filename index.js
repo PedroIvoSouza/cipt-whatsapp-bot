@@ -673,10 +673,13 @@ async function startBot() {
 
   if (wsCheckInterval) clearInterval(wsCheckInterval);
   wsCheckInterval = setInterval(() => {
-    if (!sock?.ws || sock.ws.readyState !== 1) {
-      console.warn(`[reconnect][stale] readyState=${sock?.ws?.readyState}`);
+    const readyState = sock?.ws?.readyState;
+    if (isConnected && typeof readyState === 'number' && readyState !== 1) {
+      console.warn(`[reconnect][stale] readyState=${readyState}`);
       isConnected = false;
       scheduleReconnect();
+    } else if (readyState === undefined) {
+      console.debug('[reconnect][stale] readyState=undefined');
     }
   }, 15000);
 
