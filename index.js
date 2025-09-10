@@ -991,7 +991,6 @@ async function main() {
         return res.status(400).json({ ok: false, erro: 'msisdn inválido' });
       }
       if (!msisdnDigits.startsWith('55')) msisdnDigits = '55' + msisdnDigits;
-      const jid = `${msisdnDigits}@s.whatsapp.net`;
 
       // --- 4) Verificar conexão com o WhatsApp via WebSocket ---
       if (!(isConnected && sock?.user)) {
@@ -1000,13 +999,13 @@ async function main() {
       }
 
       // --- 5) Verificar se o número está no WhatsApp ---
-      const onWa = await sock.onWhatsApp(jid).catch(() => []);
-      const targetJid = onWa?.[0]?.jid || jid;
+      const onWa = await sock.onWhatsApp(msisdnDigits).catch(() => []);
       const exists = Array.isArray(onWa) && onWa[0]?.exists;
       if (!exists) {
-        console.warn(`[send][whatsapp-nao-encontrado] -> ${targetJid}`);
+        console.warn(`[send][whatsapp-nao-encontrado] -> ${msisdnDigits}`);
         return res.status(404).json({ ok: false, erro: 'whatsapp não encontrado' });
       }
+      const targetJid = onWa[0].jid;
 
       // --- 6) Responder rápido e enviar em background ---
       res.status(202).json({ ok: true, queued: true, to: targetJid });
