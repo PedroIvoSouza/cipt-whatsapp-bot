@@ -94,6 +94,13 @@ async function loadSendMessage() {
   let res = await invoke({}, { msisdn: '123', text: 'oi' });
   assert.strictEqual(res.statusCode, 401, 'requires auth header');
 
+  // WhatsApp socket not connected
+  sockMock.ws.readyState = 0;
+  res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Oi' });
+  assert.strictEqual(res.statusCode, 503);
+  assert.deepStrictEqual(res.jsonBody, { ok: false, erro: 'whatsapp não conectado' });
+  sockMock.ws.readyState = 1;
+
   // Número não encontrado no WhatsApp
   sockMock.onWhatsApp = async () => [];
   res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Oi' });

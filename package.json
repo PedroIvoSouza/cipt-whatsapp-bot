@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "test": "node tests/sendMessage.test.js && node tests/apiEmitDar.test.js && node tests/pedeDAR.test.js"
     "test": "node tests/*.test.js"
   },
   "author": "Pedro Ivo Souza",
