@@ -606,6 +606,7 @@ async function enviarRelatorioDePendencias(sockInstancia) {
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
   sock = makeWASocket({ auth: state });
+  global.sock = sock;
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
@@ -932,8 +933,7 @@ async function main() {
   await verificarColunaTelefoneCobranca();
 
   // inicia o bot e torna acessível globalmente (caso outros módulos precisem)
-  const wSock = await startBot();
-  global.sock = wSock;
+  await startBot();
 
   // token aceito no header Authorization: Bearer <token>
   const SEND_TOKEN = process.env.WHATSAPP_BOT_TOKEN || process.env.BOT_SHARED_KEY;
@@ -970,7 +970,7 @@ async function main() {
       const jid = `${msisdnDigits}@s.whatsapp.net`;
 
       // --- 4) Verificar conexão com o WhatsApp, sem acessar .id se undefined ---
-      const meId = wSock?.user?.id || wSock?.authState?.creds?.me?.id || null;
+      const meId = sock?.user?.id || sock?.authState?.creds?.me?.id || null;
       if (!meId) {
         return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
       }
@@ -980,14 +980,14 @@ async function main() {
 
       setImmediate(async () => {
         try {
-          await wSock.presenceSubscribe(jid).catch(() => {});
-          await wSock.sendPresenceUpdate('composing', jid).catch(() => {});
+          await sock.presenceSubscribe(jid).catch(() => {});
+          await sock.sendPresenceUpdate('composing', jid).catch(() => {});
 
           // Se preferir timeout no envio, troque a linha abaixo por:
-          // await withTimeout(wSock.sendMessage(jid, { text }), 8000);
-          await wSock.sendMessage(jid, { text });
+          // await withTimeout(sock.sendMessage(jid, { text }), 8000);
+          await sock.sendMessage(jid, { text });
 
-          await wSock.sendPresenceUpdate('available', jid).catch(() => {});
+          await sock.sendPresenceUpdate('available', jid).catch(() => {});
           console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
         } catch (err) {
           console.error('[send][bg][erro]:', err?.stack || err);
@@ -1013,7 +1013,7 @@ async function main() {
       console.log('⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.');
       cron.schedule('30 11,16 * * 1-5', () => {
         console.log('[CRON] Executando verificação de chamados pendentes...');
-        enviarRelatorioDePendencias(wSock);
+        enviarRelatorioDePendencias(sock);
       }, { scheduled: true, timezone: 'America/Maceio' });
     }
   });
