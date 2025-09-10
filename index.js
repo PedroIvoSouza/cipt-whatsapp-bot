@@ -921,57 +921,100 @@ async function startBot() {
   return sock; // <- garante retorno
 }
 
+// util opcional para dar timeout em promessas (se quiser usar em envios síncronos)
+const withTimeout = (p, ms) => Promise.race([
+  p,
+  new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+]);
+
 async function main() {
   await gerarOuCarregarEmbeddings();
   await verificarColunaTelefoneCobranca();
+
+  // inicia o bot e torna acessível globalmente (caso outros módulos precisem)
   const wSock = await startBot();
+  global.sock = wSock;
 
+  // token aceito no header Authorization: Bearer <token>
   const SEND_TOKEN = process.env.WHATSAPP_BOT_TOKEN || process.env.BOT_SHARED_KEY;
+
+  // healthcheck
+  app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
+
+  // envio de mensagens
   app.post('/send', async (req, res) => {
-    let { msisdn, text } = req.body || {};
-    msisdn = onlyDigits(msisdn);
-
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-    const authOk = !!SEND_TOKEN && token === SEND_TOKEN;
-
-    console.log(sanitizeSensitive(`POST /send msisdn=${msisdn || ''} auth=${authOk ? 'ok' : 'falha'}`));
-
-    if (!authOk) {
-      console.warn(sanitizeSensitive(`POST /send falha de autenticação msisdn=${msisdn || ''}`));
-      return res.status(401).json({ ok: false, erro: 'não autorizado' });
-    }
-
     try {
-      if (!msisdn) {
+      // --- 1) Autenticação simples por Bearer ---
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const authOk = !!SEND_TOKEN && token === SEND_TOKEN;
+
+      console.log(sanitizeSensitive(`POST /send auth=${authOk ? 'ok' : 'falha'}`));
+      if (!authOk) {
+        console.warn(sanitizeSensitive('POST /send falha de autenticação'));
+        return res.status(401).json({ ok: false, erro: 'não autorizado' });
+      }
+
+      // --- 2) Validação do payload ---
+      let { msisdn, text } = req.body || {};
+      if (!msisdn || !text || String(text).trim().length === 0) {
+        return res.status(400).json({ ok: false, erro: 'msisdn e text são obrigatórios' });
+      }
+
+      // --- 3) Normalização do destino ---
+      let msisdnDigits = onlyDigits(msisdn);
+      if (!msisdnDigits) {
         return res.status(400).json({ ok: false, erro: 'msisdn inválido' });
       }
-      if (!msisdn.startsWith('55')) msisdn = '55' + msisdn;
-      const jid = msisdn + '@s.whatsapp.net';
+      if (!msisdnDigits.startsWith('55')) msisdnDigits = '55' + msisdnDigits;
+      const jid = `${msisdnDigits}@s.whatsapp.net`;
 
-      await wSock.sendMessage(jid, { text });
-      return res.json({ ok: true });
-    } catch (erro) {
-      console.error(sanitizeSensitive(`Erro ao enviar mensagem para ${msisdn}: ${erro.message}`));
-      return res.status(500).json({ ok: false, erro: erro.message });
+      // --- 4) Verificar conexão com o WhatsApp, sem acessar .id se undefined ---
+      const meId = wSock?.user?.id || wSock?.authState?.creds?.me?.id || null;
+      if (!meId) {
+        return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
+      }
+
+      // --- 5) Responder rápido e enviar em background ---
+      res.status(202).json({ ok: true, queued: true, to: jid });
+
+      setImmediate(async () => {
+        try {
+          await wSock.presenceSubscribe(jid).catch(() => {});
+          await wSock.sendPresenceUpdate('composing', jid).catch(() => {});
+
+          // Se preferir timeout no envio, troque a linha abaixo por:
+          // await withTimeout(wSock.sendMessage(jid, { text }), 8000);
+          await wSock.sendMessage(jid, { text });
+
+          await wSock.sendPresenceUpdate('available', jid).catch(() => {});
+          console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
+        } catch (err) {
+          console.error('[send][bg][erro]:', err?.stack || err);
+        }
+      });
+    } catch (e) {
+      console.error('[send][erro]:', e?.stack || e);
+      if (!res.headersSent) return res.status(500).json({ ok: false, erro: 'internal' });
     }
   });
 
-  app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
-  app.listen(process.env.PORT || 10000, () => {
-    console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 10000}`);
-    if(process.env.RENDER_URL) {
+  // servidor
+  const PORT = process.env.PORT || 10000;
+  app.listen(PORT, () => {
+    console.log(`🌐 Servidor web rodando na porta ${PORT}`);
+
+    if (process.env.RENDER_URL) {
       console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
-      setInterval(() => { axios.get(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message)); }, 14 * 60 * 1000);
-      
-      console.log("⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.");
+      setInterval(() => {
+        axios.get(process.env.RENDER_URL).catch(err => console.error('⚠️ Erro no keep-alive:', err.message));
+      }, 14 * 60 * 1000);
+
+      console.log('⏰ Agendador de relatórios de pendências ativado para 11:30 e 16:00.');
       cron.schedule('30 11,16 * * 1-5', () => {
         console.log('[CRON] Executando verificação de chamados pendentes...');
         enviarRelatorioDePendencias(wSock);
-      }, {
-        scheduled: true,
-        timezone: "America/Maceio"
-      });
+      }, { scheduled: true, timezone: 'America/Maceio' });
     }
   });
 }
