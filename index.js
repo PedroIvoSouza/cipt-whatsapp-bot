@@ -1000,7 +1000,6 @@ async function main() {
             console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
           } catch (err) {
             console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
-            if (!res.headersSent) res.status(500).json({ ok: false, erro: 'internal' });
           } finally {
             await sock.sendPresenceUpdate('available', jid).catch(() => {});
           }
