@@ -606,13 +606,16 @@ async function enviarRelatorioDePendencias(sockInstancia) {
 // --- LÓGICA PRINCIPAL DO BOT ----------------------------------------------
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authPath);
+  // sempre resetar o status de conexão ao (re)criar o socket
+  isConnected = false;
   sock = makeWASocket({ auth: state });
   global.sock = sock;
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-    isConnected = connection === 'open';
+    // considera aberto apenas se o WebSocket também estiver pronto
+    isConnected = connection === 'open' && sock?.ws?.readyState === 1;
     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
@@ -621,6 +624,7 @@ async function startBot() {
       console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
       if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Garanta que apenas uma instância do bot esteja rodando!");
       if (shouldReconnect) setTimeout(startBot, 5000);
+      else isConnected = false; // erro crítico, garantir flag zerada
     }
   });
 
