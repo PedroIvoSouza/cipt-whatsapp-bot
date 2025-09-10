@@ -992,14 +992,20 @@ async function main() {
           await sock.presenceSubscribe(jid).catch(() => {});
           await sock.sendPresenceUpdate('composing', jid).catch(() => {});
 
-          // Se preferir timeout no envio, troque a linha abaixo por:
-          // await withTimeout(sock.sendMessage(jid, { text }), 8000);
-          await sock.sendMessage(jid, { text });
+          try {
+            // Se preferir timeout no envio, troque a linha abaixo por:
+            // await withTimeout(sock.sendMessage(jid, { text }), 8000);
+            await sock.sendMessage(jid, { text });
 
-          await sock.sendPresenceUpdate('available', jid).catch(() => {});
-          console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
+            console.log(sanitizeSensitive(`[send][ok] -> ${jid} (${String(text).length} chars)`));
+          } catch (err) {
+            console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
+            if (!res.headersSent) res.status(500).json({ ok: false, erro: 'internal' });
+          } finally {
+            await sock.sendPresenceUpdate('available', jid).catch(() => {});
+          }
         } catch (err) {
-          console.error('[send][bg][erro]:', err?.stack || err);
+          console.error('[send][bg][erro]:', err?.stack || err, err?.data || err?.output);
         }
       });
     } catch (e) {
