@@ -958,8 +958,8 @@ async function main() {
   });
 
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
-  app.listen(process.env.PORT || 3000, () => {
-    console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
+  app.listen(process.env.PORT || 10000, () => {
+    console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 10000}`);
     if(process.env.RENDER_URL) {
       console.log(`🚀 Iniciando ping de keep-alive para ${process.env.RENDER_URL}`);
       setInterval(() => { axios.get(process.env.RENDER_URL).catch(err => console.error("⚠️ Erro no keep-alive:", err.message)); }, 14 * 60 * 1000);
