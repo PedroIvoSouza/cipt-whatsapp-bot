@@ -925,7 +925,32 @@ async function main() {
   await gerarOuCarregarEmbeddings();
   await verificarColunaTelefoneCobranca();
   const wSock = await startBot();
-  
+
+  const SEND_TOKEN = process.env.WHATSAPP_BOT_TOKEN || process.env.BOT_SHARED_KEY;
+  app.post('/send', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (!SEND_TOKEN || token !== SEND_TOKEN) {
+        return res.status(401).json({ ok: false, erro: 'não autorizado' });
+      }
+
+      let { msisdn, text } = req.body || {};
+      msisdn = onlyDigits(msisdn);
+      if (!msisdn) {
+        return res.status(400).json({ ok: false, erro: 'msisdn inválido' });
+      }
+      if (!msisdn.startsWith('55')) msisdn = '55' + msisdn;
+      const jid = msisdn + '@s.whatsapp.net';
+
+      await wSock.sendMessage(jid, { text });
+      return res.json({ ok: true });
+    } catch (erro) {
+      console.error('Erro ao enviar mensagem:', erro);
+      return res.json({ ok: false, erro: erro.message });
+    }
+  });
+
   app.get('/', (req, res) => res.send('✅ Bot do CIPT está online!'));
   app.listen(process.env.PORT || 3000, () => {
     console.log(`🌐 Servidor web rodando na porta ${process.env.PORT || 3000}`);
