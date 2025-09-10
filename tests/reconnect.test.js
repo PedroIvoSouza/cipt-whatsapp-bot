@@ -4,17 +4,24 @@ const Module = require('module');
 
 (async () => {
   const sockets = [];
+  let activeSockets = 0;
   function createSock() {
     const sock = {
-      ws: { readyState: 1, on(){} },
+      ws: {
+        readyState: 1,
+        on(){},
+        close(){ sock.closed = true; activeSockets--; }
+      },
       handlers: {},
       ev: {
         on(event, handler) {
           sock.handlers[event] = handler;
-        }
+        },
+        removeAllListeners(){ sock.handlers = {}; }
       }
     };
     sockets.push(sock);
+    activeSockets++;
     return sock;
   }
 
@@ -63,6 +70,8 @@ const Module = require('module');
   sockets[0].handlers['connection.update']({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 0 } } } });
   await new Promise(r => setImmediate(r));
   assert.strictEqual(sockets.length >= 2, true, 'reconnect should create new socket');
+  assert.strictEqual(sockets[0].closed, true, 'old socket should be closed');
+  assert.strictEqual(activeSockets, 1, 'only one active socket after reconnect');
 
   sockets[1].handlers['connection.update']({ connection: 'open' });
   assert.strictEqual(bot.getIsConnected(), true, 'bot should reconnect successfully');
