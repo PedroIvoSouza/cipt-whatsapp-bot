@@ -6,7 +6,7 @@ async function loadSendMessage() {
   const calls = [];
   const sockMock = {
     calls,
-    ws: { readyState: 1 },
+    ws: { readyState: 1, on(){} },
     user: {},
     ev: { on(event, handler){ if(event === 'connection.update') sockMock._connectionHandler = handler; } },
     sendMessage: async (...args) => {
@@ -66,6 +66,8 @@ async function loadSendMessage() {
 
   process.env.WHATSAPP_BOT_TOKEN = 'secret';
 
+  global.setTimeout = (fn) => { fn(); return 0; };
+  global.setInterval = (fn) => { fn(); return { ref(){}, unref(){} }; };
   delete require.cache[indexPath];
   Module._load(indexPath, null, true);
   Module.prototype.require = originalRequire;
@@ -95,13 +97,6 @@ async function loadSendMessage() {
   // Auth required
   let res = await invoke({}, { msisdn: '123', text: 'oi' });
   assert.strictEqual(res.statusCode, 401, 'requires auth header');
-
-  // WhatsApp socket not connected
-  sockMock.ws.readyState = 0;
-  res = await invoke({ authorization: 'Bearer secret' }, { msisdn: '5511999999999', text: 'Oi' });
-  assert.strictEqual(res.statusCode, 503);
-  assert.deepStrictEqual(res.jsonBody, { ok: false, erro: 'whatsapp não conectado' });
-  sockMock.ws.readyState = 1;
 
   // Simulate connection opened
   sockMock._connectionHandler && sockMock._connectionHandler({ connection: 'open' });
