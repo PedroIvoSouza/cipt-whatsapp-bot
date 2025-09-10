@@ -928,15 +928,21 @@ async function main() {
 
   const SEND_TOKEN = process.env.WHATSAPP_BOT_TOKEN || process.env.BOT_SHARED_KEY;
   app.post('/send', async (req, res) => {
-    try {
-      const authHeader = req.headers.authorization || '';
-      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-      if (!SEND_TOKEN || token !== SEND_TOKEN) {
-        return res.status(401).json({ ok: false, erro: 'não autorizado' });
-      }
+    let { msisdn, text } = req.body || {};
+    msisdn = onlyDigits(msisdn);
 
-      let { msisdn, text } = req.body || {};
-      msisdn = onlyDigits(msisdn);
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const authOk = !!SEND_TOKEN && token === SEND_TOKEN;
+
+    console.log(sanitizeSensitive(`POST /send msisdn=${msisdn || ''} auth=${authOk ? 'ok' : 'falha'}`));
+
+    if (!authOk) {
+      console.warn(sanitizeSensitive(`POST /send falha de autenticação msisdn=${msisdn || ''}`));
+      return res.status(401).json({ ok: false, erro: 'não autorizado' });
+    }
+
+    try {
       if (!msisdn) {
         return res.status(400).json({ ok: false, erro: 'msisdn inválido' });
       }
@@ -946,8 +952,8 @@ async function main() {
       await wSock.sendMessage(jid, { text });
       return res.json({ ok: true });
     } catch (erro) {
-      console.error('Erro ao enviar mensagem:', erro);
-      return res.json({ ok: false, erro: erro.message });
+      console.error(sanitizeSensitive(`Erro ao enviar mensagem para ${msisdn}: ${erro.message}`));
+      return res.status(500).json({ ok: false, erro: erro.message });
     }
   });
 
