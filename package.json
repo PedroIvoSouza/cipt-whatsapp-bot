@@ -4,7 +4,8 @@
   "description": "Assistente Virtual do CIPT para WhatsApp",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node tests/*.test.js"
   },
   "author": "Pedro Ivo Souza",
   "license": "ISC",
