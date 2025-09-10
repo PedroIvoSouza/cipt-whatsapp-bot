@@ -13,7 +13,7 @@ async function loadSendMessage() {
       calls.push(args);
       return { key: { id: 'mock-id' } };
     },
-    onWhatsApp: async () => [{ exists: true }],
+    onWhatsApp: async () => [{ exists: true, jid: '5511999999999@s.whatsapp.net' }],
     presenceSubscribe: async () => {},
     sendPresenceUpdate: async () => {}
   };
@@ -113,7 +113,7 @@ async function loadSendMessage() {
   assert.deepStrictEqual(res.jsonBody, { ok: false, erro: 'whatsapp não encontrado' });
 
   // Success case
-  sockMock.onWhatsApp = async () => [{ exists: true }];
+  sockMock.onWhatsApp = async () => [{ exists: true, jid: '5511999999999@s.whatsapp.net' }];
   sockMock.calls.length = 0;
   const logs = [];
   const originalLog = console.log;
