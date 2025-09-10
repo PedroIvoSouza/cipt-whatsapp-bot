@@ -969,9 +969,10 @@ async function main() {
       if (!msisdnDigits.startsWith('55')) msisdnDigits = '55' + msisdnDigits;
       const jid = `${msisdnDigits}@s.whatsapp.net`;
 
-      // --- 4) Verificar conexão com o WhatsApp, sem acessar .id se undefined ---
-      const meId = sock?.user?.id || sock?.authState?.creds?.me?.id || null;
-      if (!meId) {
+      // --- 4) Verificar conexão com o WhatsApp via WebSocket ---
+      const isConnected = sock?.ws?.readyState === 1; // 1 = OPEN
+      if (!isConnected) {
+        console.warn('[send][ws-nao-conectado]');
         return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
       }
 
