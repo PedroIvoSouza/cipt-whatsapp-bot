@@ -41,6 +41,43 @@ export ADMIN_PUBLIC_BASE="https://pagamentos.exemplo.com"
 
 Certifique-se de manter a chave compartilhada em local seguro e não versioná-la.
 
+## Envio de mensagens via API
+
+O bot expõe um endpoint HTTP que permite o envio de mensagens de texto para um número do WhatsApp.
+
+### `POST /send`
+
+Envia uma mensagem para o número especificado.
+
+**Cabeçalhos**
+
+- `Authorization: Bearer <WHATSAPP_BOT_TOKEN>`
+- `Content-Type: application/json`
+
+**Exemplo de requisição**
+
+```bash
+curl -X POST http://localhost:3000/send \
+  -H "Authorization: Bearer supersecreto" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"5582999999999","message":"Olá!"}'
+```
+
+**Resposta**
+
+```json
+{ "success": true }
+```
+
+### Variáveis de ambiente
+
+```
+WHATSAPP_BOT_TOKEN=supersecreto
+#BOT_AUTH_DEBUG=true
+```
+
+`WHATSAPP_BOT_TOKEN` define o token aceito pelo middleware de autenticação. Defina `BOT_AUTH_DEBUG` como `true` para habilitar logs de depuração.
+
 ## Executando
 
 ```bash
