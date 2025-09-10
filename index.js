@@ -942,7 +942,6 @@ async function main() {
 
   // healthcheck
   app.get('/', (req, res) => {
-    const isConnected = sock?.ws?.readyState === 1; // 1 = OPEN
     if (req.accepts('json')) {
       return res.json({ ok: true, connected: isConnected });
     }
