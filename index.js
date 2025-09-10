@@ -684,7 +684,10 @@ async function startBot() {
     const { connection, lastDisconnect, qr } = update;
     const err = update?.error;
     // considera aberto apenas se a conexão estiver marcada como 'open'
-    isConnected = connection === 'open';
+    if (typeof connection !== 'undefined') {
+      console.log('🔄 Estado da conexão:', connection);
+      isConnected = connection === 'open';
+    }
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
