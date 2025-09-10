@@ -47,7 +47,8 @@ const EMAIL_SUPORTE = 'supcti@secti.al.gov.br';
 const SITE_OFICIAL = 'secti.al.gov.br';
 
 let embeddingsCache = [];
-let sock; 
+let sock;
+let isConnected = false;
 
 const authPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/auth` : 'auth';
 const embeddingsPath = process.env.RENDER_DISK_MOUNT_PATH ? `${process.env.RENDER_DISK_MOUNT_PATH}/embeddings.json` : 'embeddings.json';
@@ -611,6 +612,7 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
+    isConnected = connection === 'open';
     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
@@ -970,8 +972,7 @@ async function main() {
       const jid = `${msisdnDigits}@s.whatsapp.net`;
 
       // --- 4) Verificar conexão com o WhatsApp via WebSocket ---
-      const isConnected = sock?.ws?.readyState === 1; // 1 = OPEN
-      if (!isConnected) {
+      if (!(isConnected && sock?.user)) {
         console.warn('[send][ws-nao-conectado]');
         return res.status(503).json({ ok: false, erro: 'whatsapp não conectado' });
       }
