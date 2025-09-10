@@ -614,17 +614,17 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-    // considera aberto apenas se o WebSocket também estiver pronto
-    isConnected = connection === 'open' && sock?.ws?.readyState === 1;
+    // considera aberto apenas se a conexão estiver marcada como 'open'
+    isConnected = connection === 'open';
     if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
     if (connection === 'open') console.log('✅ Conectado ao WhatsApp!');
     if (connection === 'close') {
+      isConnected = false;
       const error = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = error !== DisconnectReason.loggedOut;
       console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
       if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Garanta que apenas uma instância do bot esteja rodando!");
       if (shouldReconnect) setTimeout(startBot, 5000);
-      else isConnected = false; // erro crítico, garantir flag zerada
     }
   });
 
