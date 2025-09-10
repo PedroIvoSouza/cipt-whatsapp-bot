@@ -1,5 +1,6 @@
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
 const Module = require('module');
 
 function loadApiEmitDar(responses) {
@@ -8,7 +9,10 @@ function loadApiEmitDar(responses) {
   const nextResp = () => Array.isArray(responses)
     ? responses[Math.min(i++, responses.length - 1)]
     : responses;
-  const axiosMock = {
+    const lockPath = path.resolve(__dirname, '..', 'cipt-bot.lock');
+    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+
+    const axiosMock = {
     get: async (url, config = {}) => {
       calls.push({ method: 'get', url, config });
       const resp = nextResp();
@@ -62,13 +66,14 @@ function loadApiEmitDar(responses) {
     return originalRequire.apply(this, arguments);
   };
 
-  delete require.cache[indexPath];
-  const { apiEmitDar } = require(indexPath);
-  Module.prototype.require = originalRequire;
-  delete require.cache[indexPath];
-  apiEmitDar.axiosCalls = calls;
-  return apiEmitDar;
-}
+    delete require.cache[indexPath];
+    const { apiEmitDar } = require(indexPath);
+    Module.prototype.require = originalRequire;
+    delete require.cache[indexPath];
+    if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+    apiEmitDar.axiosCalls = calls;
+    return apiEmitDar;
+  }
 
 (async () => {
   let apiEmitDar = loadApiEmitDar({
