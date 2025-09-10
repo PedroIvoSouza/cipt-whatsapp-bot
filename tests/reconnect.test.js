@@ -32,6 +32,7 @@ const Module = require('module');
   global.setTimeout = (fn) => { fn(); return 0; };
   global.setInterval = (fn) => { fn(); return { ref(){}, unref(){} }; };
 
+  const DISCONNECT_REASON = { loggedOut: 401, connectionReplaced: 410 };
   const indexPath = path.resolve(__dirname, '..', 'index.js');
   const originalRequire = Module.prototype.require;
   Module.prototype.require = function (moduleName) {
@@ -43,7 +44,7 @@ const Module = require('module');
     if (moduleName === '@whiskeysockets/baileys') return {
       makeWASocket: createSock,
       useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
-      DisconnectReason: {}
+      DisconnectReason: DISCONNECT_REASON
     };
     if (moduleName === 'openai') return class { constructor(){ this.embeddings = { create: async () => ({ data: [{ embedding: [0] }] }) }; } };
     if (moduleName === 'node-cron') return { schedule(){} };
@@ -75,6 +76,11 @@ const Module = require('module');
 
   sockets[1].handlers['connection.update']({ connection: 'open' });
   assert.strictEqual(bot.getIsConnected(), true, 'bot should reconnect successfully');
+
+  const prevSockets = sockets.length;
+  sockets[1].handlers['connection.update']({ connection: 'close', lastDisconnect: { error: { output: { statusCode: DISCONNECT_REASON.connectionReplaced } } } });
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(sockets.length, prevSockets, 'no reconnect should occur after connectionReplaced');
 
   console.log('Reconnect test passed');
 })();

@@ -86,3 +86,10 @@ Este projeto inicia um servidor Express escutando em `process.env.PORT` (padrão
 ```bash
 npm start
 ```
+
+## Instância única
+
+O WhatsApp permite apenas uma conexão ativa por conjunto de credenciais.
+Se outra instância do bot iniciar com as mesmas credenciais, a conexão existente será encerrada com o motivo `connectionReplaced`.
+Quando isso ocorre, o bot registra um aviso e não tenta reconectar automaticamente.
+Portanto, execute somente **uma instância** do bot para cada conjunto de credenciais de autenticação.

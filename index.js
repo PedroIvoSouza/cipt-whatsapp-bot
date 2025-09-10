@@ -52,9 +52,10 @@ let isConnected = false;
 let reconnectAttempts = 0;
 let reconnectTimer;
 let wsCheckInterval;
+let reconnectAllowed = true;
 
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (!reconnectAllowed || reconnectTimer) return;
   const delay = Math.min(30000, 5000 * 2 ** reconnectAttempts);
   reconnectAttempts++;
   console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms`);
@@ -672,9 +673,12 @@ async function startBot() {
     if (connection === 'close' || err) {
       isConnected = false;
       const error = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = error !== DisconnectReason.loggedOut;
+      if (error === DisconnectReason.connectionReplaced) {
+        reconnectAllowed = false;
+        console.error("‼️ CONFLITO: conexão substituída. Garanta que apenas uma instância do bot esteja rodando com estas credenciais.");
+      }
+      const shouldReconnect = reconnectAllowed && error !== DisconnectReason.loggedOut && error !== DisconnectReason.connectionReplaced;
       console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
-      if (error === DisconnectReason.connectionReplaced) console.log("‼️ CONFLITO: Garanta que apenas uma instância do bot esteja rodando!");
       if (shouldReconnect) scheduleReconnect();
     }
   });
