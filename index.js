@@ -648,7 +648,7 @@ async function enviarRelatorioDePendencias(sockInstancia) {
   for (const [nome, count] of Object.entries(contagemPorResponsavel)) {
     mensagem += `\n- ${nome}: ${count} chamado(s) pendente(s)`;
   }
-  mensagem += "\n\nPor favor, atualizem os status respondendo aos alertas no grupo. Vamos zerar essa fila! 💪";
+  mensagem += "\n\nPor favor, atualizem os status respondendo ao alerta privado que o bot enviou sobre cada chamado. Vamos zerar essa fila! 💪";
   await sockInstancia.sendMessage(GRUPO_SUPORTE_JID, { text: mensagem });
 }
 
