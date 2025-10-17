@@ -30,6 +30,8 @@ function acquireLock(attempt = 0) {
       } catch (checkErr) {
         if (checkErr.code === 'ESRCH') {
           running = false;
+        } else if (checkErr.code === 'EPERM') {
+          console.warn(`Não foi possível verificar o processo ${existingPid} (EPERM). Assumindo que ainda está ativo.`);
         } else {
           throw checkErr;
         }
@@ -43,7 +45,12 @@ function acquireLock(attempt = 0) {
     try {
       fs.unlinkSync(LOCK_FILE);
     } catch (unlinkErr) {
-      if (unlinkErr.code !== 'ENOENT') throw unlinkErr;
+      if (unlinkErr.code === 'ENOENT') {
+        // nothing to remove
+      } else {
+        console.error(`Falha ao remover lockfile ${LOCK_FILE}: ${unlinkErr.message}`);
+        process.exit(1);
+      }
     }
 
     if (attempt >= 3) {

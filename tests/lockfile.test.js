@@ -54,12 +54,15 @@ function loadIndex() {
   let logged = '';
   const origExit = process.exit;
   const origErr = console.error;
+  const origWarn = console.warn;
   process.exit = code => { exitCode = code; throw new Error('exit'); };
   console.error = msg => { logged += String(msg); };
+  console.warn = msg => { logged += String(msg); };
 
   assert.throws(() => loadIndex(), /exit/);
 
   console.error = origErr;
+  console.warn = origWarn;
   process.exit = origExit;
 
   assert.strictEqual(exitCode, 1);
@@ -77,5 +80,32 @@ function loadIndex() {
   cleanup2();
   process.removeListener('exit', cleanup2);
   assert(!fs.existsSync(LOCK_PATH), 'lockfile should be removed on cleanup (second run)');
+
+  // EPERM should be treated as "lock still owned" and exit cleanly
+  fs.writeFileSync(LOCK_PATH, String(12345));
+  const origKill = process.kill;
+  process.kill = () => {
+    const err = new Error('eperm');
+    err.code = 'EPERM';
+    throw err;
+  };
+
+  exitCode = undefined;
+  logged = '';
+  process.exit = code => { exitCode = code; throw new Error('exit'); };
+  console.error = msg => { logged += String(msg); };
+  console.warn = msg => { logged += String(msg); };
+
+  assert.throws(() => loadIndex(), /exit/);
+
+  console.error = origErr;
+  console.warn = origWarn;
+  process.exit = origExit;
+  process.kill = origKill;
+
+  assert.strictEqual(exitCode, 1);
+  assert(logged.includes('Another instance may be running'));
+
+  if (fs.existsSync(LOCK_PATH)) fs.unlinkSync(LOCK_PATH);
 })();
 
