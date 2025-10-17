@@ -6,18 +6,75 @@ const fs = require('fs');
 const path = require('path');
 
 const LOCK_FILE = path.join(__dirname, 'cipt-bot.lock');
-try {
-  fs.closeSync(fs.openSync(LOCK_FILE, 'wx'));
-} catch (err) {
-  if (err.code === 'EEXIST') {
-    console.error(`Lockfile ${LOCK_FILE} already exists. Another instance may be running.`);
-    process.exit(1);
+
+function acquireLock(attempt = 0) {
+  try {
+    fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
+    return;
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+
+    let existingPid;
+    try {
+      const raw = fs.readFileSync(LOCK_FILE, 'utf8').trim();
+      existingPid = Number.parseInt(raw, 10);
+      if (!Number.isFinite(existingPid)) existingPid = undefined;
+    } catch (readErr) {
+      if (readErr.code !== 'ENOENT') throw readErr;
+    }
+
+    if (existingPid) {
+      let running = true;
+      try {
+        process.kill(existingPid, 0);
+      } catch (checkErr) {
+        if (checkErr.code === 'ESRCH') {
+          running = false;
+        } else if (checkErr.code === 'EPERM') {
+          console.warn(`Não foi possível verificar o processo ${existingPid} (EPERM). Assumindo que ainda está ativo.`);
+        } else {
+          throw checkErr;
+        }
+      }
+      if (running) {
+        console.error(`Lockfile ${LOCK_FILE} already exists (pid ${existingPid}). Another instance may be running.`);
+        process.exit(1);
+      }
+    }
+
+    try {
+      fs.unlinkSync(LOCK_FILE);
+    } catch (unlinkErr) {
+      if (unlinkErr.code === 'ENOENT') {
+        // nothing to remove
+      } else {
+        console.error(`Falha ao remover lockfile ${LOCK_FILE}: ${unlinkErr.message}`);
+        process.exit(1);
+      }
+    }
+
+    if (attempt >= 3) {
+      console.error(`Unable to acquire lockfile ${LOCK_FILE} after ${attempt + 1} attempts.`);
+      process.exit(1);
+    }
+
+    acquireLock(attempt + 1);
   }
-  throw err;
 }
 
+acquireLock();
+
 function removeLock() {
-  try { fs.unlinkSync(LOCK_FILE); } catch {}
+  try {
+    const raw = fs.readFileSync(LOCK_FILE, 'utf8').trim();
+    if (raw === String(process.pid)) {
+      fs.unlinkSync(LOCK_FILE);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`Não foi possível remover lockfile ${LOCK_FILE}:`, err.message);
+    }
+  }
 }
 process.on('exit', removeLock);
 process.once('SIGINT', () => { removeLock(); process.exit(0); });
