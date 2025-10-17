@@ -68,5 +68,14 @@ function loadIndex() {
   cleanup();
   process.removeListener('exit', cleanup);
   assert(!fs.existsSync(LOCK_PATH), 'lockfile should be removed on cleanup');
+
+  fs.writeFileSync(LOCK_PATH, 'not-a-number');
+  loadIndex();
+  const written = fs.readFileSync(LOCK_PATH, 'utf8').trim();
+  assert.strictEqual(written, String(process.pid), 'lockfile should be replaced with current pid');
+  const cleanup2 = process.listeners('exit').find(fn => fn.toString().includes('LOCK_FILE'));
+  cleanup2();
+  process.removeListener('exit', cleanup2);
+  assert(!fs.existsSync(LOCK_PATH), 'lockfile should be removed on cleanup (second run)');
 })();
 
