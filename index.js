@@ -149,11 +149,13 @@ async function resetAuthState(reasonCode) {
   }
 }
 
-function scheduleReconnect() {
+function scheduleReconnect(options = {}) {
+  const { immediate = false, reason } = options;
   if (!reconnectAllowed || reconnectTimer) return;
-  const delay = Math.min(30000, 5000 * 2 ** reconnectAttempts);
-  reconnectAttempts++;
-  console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms`);
+  const delay = immediate ? 0 : Math.min(30000, 5000 * 2 ** reconnectAttempts);
+  reconnectAttempts += 1;
+  const reasonSuffix = reason ? ` (${reason})` : '';
+  console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms${reasonSuffix}`);
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
     console.log(`[reconnect] iniciando tentativa #${reconnectAttempts}`);
@@ -787,6 +789,7 @@ async function startBot() {
         console.error("‼️ CONFLITO: conexão substituída. Garanta que apenas uma instância do bot esteja rodando com estas credenciais.");
       }
       let shouldReconnect = reconnectAllowed && statusCode !== DisconnectReason.connectionReplaced;
+      let reconnectOptions;
       if (LOGOUT_STATUS_CODES.has(statusCode)) {
         console.error(`‼️ Sessão inválida/expirada (código: ${statusCode}). Limpando credenciais para solicitar novo QR Code.`);
         const cleaned = await resetAuthState(statusCode);
@@ -795,9 +798,13 @@ async function startBot() {
         }
         reconnectAttempts = 0;
         shouldReconnect = reconnectAllowed;
+        if (shouldReconnect) {
+          reconnectOptions = { immediate: true, reason: `logout:${statusCode}` };
+          console.warn('📸 Aguardando novo QR Code após limpar credenciais...');
+        }
       }
       console.log(`❌ Conexão caiu (código: ${statusCode}). Reconectando: ${shouldReconnect}`);
-      if (shouldReconnect) scheduleReconnect();
+      if (shouldReconnect) scheduleReconnect(reconnectOptions);
     }
   });
 
