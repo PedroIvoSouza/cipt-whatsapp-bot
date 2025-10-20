@@ -63,6 +63,15 @@ const Module = require('module');
   delete require.cache[indexPath];
   const bot = require(indexPath);
   Module.prototype.require = originalRequire;
+
+  const fs = require('fs');
+  const originalRm = fs.promises.rm;
+  const originalMkdir = fs.promises.mkdir;
+  const rmCalls = [];
+  const mkdirCalls = [];
+  fs.promises.rm = async (...args) => { rmCalls.push(args); };
+  fs.promises.mkdir = async (...args) => { mkdirCalls.push(args); };
+
   await bot.startBot();
 
   sockets[0].handlers['connection.update']({ connection: 'open' });
@@ -77,8 +86,23 @@ const Module = require('module');
   sockets[1].handlers['connection.update']({ connection: 'open' });
   assert.strictEqual(bot.getIsConnected(), true, 'bot should reconnect successfully');
 
+  const socketsBeforeLogout = sockets.length;
+  sockets[1].handlers['connection.update']({ connection: 'close', lastDisconnect: { error: { output: { statusCode: DISCONNECT_REASON.loggedOut } } } });
+  await new Promise(r => setImmediate(r));
+
+  assert.strictEqual(rmCalls.length > 0, true, 'logout should trigger auth reset');
+  assert.strictEqual(mkdirCalls.length > 0, true, 'logout should recreate auth folder');
+  assert.strictEqual(sockets.length >= socketsBeforeLogout + 1, true, 'logout should trigger new socket creation');
+
+  fs.promises.rm = originalRm;
+  fs.promises.mkdir = originalMkdir;
+
+  const latestSocket = sockets[sockets.length - 1];
+  latestSocket.handlers['connection.update']({ connection: 'open' });
+  assert.strictEqual(bot.getIsConnected(), true, 'bot should reconnect after logout reset');
+
   const prevSockets = sockets.length;
-  sockets[1].handlers['connection.update']({ connection: 'close', lastDisconnect: { error: { output: { statusCode: DISCONNECT_REASON.connectionReplaced } } } });
+  latestSocket.handlers['connection.update']({ connection: 'close', lastDisconnect: { error: { output: { statusCode: DISCONNECT_REASON.connectionReplaced } } } });
   await new Promise(r => setImmediate(r));
   assert.strictEqual(sockets.length, prevSockets, 'no reconnect should occur after connectionReplaced');
 
