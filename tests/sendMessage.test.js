@@ -48,7 +48,8 @@ async function loadSendMessage() {
     if (moduleName === '@whiskeysockets/baileys') return {
       makeWASocket: () => sockMock,
       useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
-      DisconnectReason: {}
+      DisconnectReason: {},
+      fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0] })
     };
     if (moduleName === 'openai') return class {
       constructor() { this.embeddings = { create: async () => ({ data: [{ embedding: [0] }] }) }; }

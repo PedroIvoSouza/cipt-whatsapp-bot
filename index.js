@@ -87,7 +87,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const pdfParse = require('pdf-parse');
 const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const OpenAI = require('openai');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -135,6 +135,34 @@ let authResetInProgress = false;
 let awaitingFreshLogin = false;
 let freshLoginTimer;
 let freshLoginInFlight = false;
+let cachedWaVersion;
+let cachedWaVersionFetchedAt = 0;
+
+const WA_VERSION_CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6 horas
+
+async function resolveWaVersion({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  if (
+    forceRefresh ||
+    !Array.isArray(cachedWaVersion) ||
+    cachedWaVersion.length !== 3 ||
+    now - cachedWaVersionFetchedAt > WA_VERSION_CACHE_TTL_MS
+  ) {
+    try {
+      const { version } = await fetchLatestBaileysVersion();
+      cachedWaVersion = version;
+      cachedWaVersionFetchedAt = now;
+      console.log(`🌐 Versão WhatsApp Web detectada: ${version.join('.')}`);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      console.error(`⚠️ Falha ao obter versão mais recente do WhatsApp Web: ${msg}`);
+      if (!cachedWaVersion) {
+        console.warn('⚠️ Continuando com a versão padrão embutida no Baileys.');
+      }
+    }
+  }
+  return cachedWaVersion;
+}
 
 async function resetAuthState(reasonCode) {
   if (authResetInProgress) return false;
@@ -142,6 +170,7 @@ async function resetAuthState(reasonCode) {
   try {
     await fs.promises.rm(authPath, { recursive: true, force: true });
     await fs.promises.mkdir(authPath, { recursive: true });
+    cachedWaVersionFetchedAt = 0; // força refetch na próxima inicialização
     console.warn(`🔐 Estado de autenticação limpo (motivo: ${reasonCode}). Será necessário escanear um novo QR Code.`);
     return true;
   } catch (err) {
@@ -762,7 +791,12 @@ async function startBot() {
     try { sock.ev?.removeAllListeners?.(); } catch {}
   }
   isConnected = false;
-  sock = makeWASocket({ auth: state });
+  const waVersion = await resolveWaVersion({ forceRefresh: awaitingFreshLogin });
+  const socketConfig = { auth: state };
+  if (Array.isArray(waVersion) && waVersion.length === 3) {
+    socketConfig.version = waVersion;
+  }
+  sock = makeWASocket(socketConfig);
   global.sock = sock;
   sock.ev.on('creds.update', saveCreds);
 

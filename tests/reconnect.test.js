@@ -44,7 +44,8 @@ const Module = require('module');
     if (moduleName === '@whiskeysockets/baileys') return {
       makeWASocket: createSock,
       useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
-      DisconnectReason: DISCONNECT_REASON
+      DisconnectReason: DISCONNECT_REASON,
+      fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0] })
     };
     if (moduleName === 'openai') return class { constructor(){ this.embeddings = { create: async () => ({ data: [{ embedding: [0] }] }) }; } };
     if (moduleName === 'node-cron') return { schedule(){} };
