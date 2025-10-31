@@ -95,6 +95,8 @@ const sqlite3 = require('sqlite3').verbose(); // <- NOVO
 const { getCiptPrompt } = require("./ciptPrompt.js");
 const { registrarChamado, atualizarStatusChamado, verificarChamadosAbertos } = require("./sheetsChamados");
 
+const LOGOUT_STATUS_CODES = new Set([DisconnectReason?.loggedOut, 401, 405].filter((code) => typeof code === 'number'));
+
 // ⚙️ Carrega variáveis de ambiente ANTES de ler process.env
 dotenv.config();
 
@@ -129,12 +131,54 @@ let reconnectAttempts = 0;
 let reconnectTimer;
 let wsCheckInterval;
 let reconnectAllowed = true;
+let authResetInProgress = false;
+let awaitingFreshLogin = false;
+let freshLoginTimer;
+let freshLoginInFlight = false;
 
-function scheduleReconnect() {
+async function resetAuthState(reasonCode) {
+  if (authResetInProgress) return false;
+  authResetInProgress = true;
+  try {
+    await fs.promises.rm(authPath, { recursive: true, force: true });
+    await fs.promises.mkdir(authPath, { recursive: true });
+    console.warn(`🔐 Estado de autenticação limpo (motivo: ${reasonCode}). Será necessário escanear um novo QR Code.`);
+    return true;
+  } catch (err) {
+    console.error(`🔐 Falha ao limpar credenciais (${reasonCode}):`, err?.message || err);
+    return false;
+  } finally {
+    authResetInProgress = false;
+  }
+}
+
+function scheduleFreshLoginAfterLogout(statusCode, delayMs = 0) {
+  if (!reconnectAllowed) return;
+  if (freshLoginTimer || freshLoginInFlight) return;
+  freshLoginTimer = setTimeout(async () => {
+    freshLoginTimer = null;
+    if (!reconnectAllowed) return;
+    freshLoginInFlight = true;
+    try {
+      reconnectAttempts = 0;
+      console.warn(`🔁 Iniciando nova sessão limpa para gerar QR Code (motivo: ${statusCode}).`);
+      await startBot();
+    } catch (err) {
+      console.error(`⚠️ Falha ao iniciar sessão limpa após logout ${statusCode}:`, err?.message || err);
+      scheduleReconnect({ reason: `logout-retry:${statusCode}` });
+    } finally {
+      freshLoginInFlight = false;
+    }
+  }, delayMs);
+}
+
+function scheduleReconnect(options = {}) {
+  const { immediate = false, reason } = options;
   if (!reconnectAllowed || reconnectTimer) return;
-  const delay = Math.min(30000, 5000 * 2 ** reconnectAttempts);
-  reconnectAttempts++;
-  console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms`);
+  const delay = immediate ? 0 : Math.min(30000, 5000 * 2 ** reconnectAttempts);
+  reconnectAttempts += 1;
+  const reasonSuffix = reason ? ` (${reason})` : '';
+  console.warn(`[reconnect] tentativa #${reconnectAttempts} em ${delay}ms${reasonSuffix}`);
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = null;
     console.log(`[reconnect] iniciando tentativa #${reconnectAttempts}`);
@@ -752,21 +796,54 @@ async function startBot() {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    if (qr) console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
+    if (qr) {
+      awaitingFreshLogin = true;
+      console.log("‼️ NOVO QR CODE. Gere a imagem em: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodeURIComponent(qr));
+    }
     if (connection === 'open') {
       console.log('✅ Conectado ao WhatsApp!');
       reconnectAttempts = 0;
+      awaitingFreshLogin = false;
+      if (freshLoginTimer) {
+        clearTimeout(freshLoginTimer);
+        freshLoginTimer = null;
+      }
     }
     if (connection === 'close' || err) {
       isConnected = false;
-      const error = lastDisconnect?.error?.output?.statusCode;
-      if (error === DisconnectReason.connectionReplaced) {
+      const statusCode = lastDisconnect?.error?.output?.statusCode
+        ?? err?.output?.statusCode
+        ?? err?.statusCode
+        ?? err?.status;
+      if (statusCode === DisconnectReason.connectionReplaced) {
         reconnectAllowed = false;
         console.error("‼️ CONFLITO: conexão substituída. Garanta que apenas uma instância do bot esteja rodando com estas credenciais.");
       }
-      const shouldReconnect = reconnectAllowed && error !== DisconnectReason.loggedOut && error !== DisconnectReason.connectionReplaced;
-      console.log(`❌ Conexão caiu (código: ${error}). Reconectando: ${shouldReconnect}`);
-      if (shouldReconnect) scheduleReconnect();
+      let shouldReconnect = reconnectAllowed && statusCode !== DisconnectReason.connectionReplaced;
+      let reconnectOptions;
+      let scheduledFreshLogin = false;
+      if (LOGOUT_STATUS_CODES.has(statusCode)) {
+        console.error(`‼️ Sessão inválida/expirada (código: ${statusCode}). Limpando credenciais para solicitar novo QR Code.`);
+        const cleaned = await resetAuthState(statusCode);
+        if (!cleaned) {
+          console.error('⚠️ Não foi possível remover automaticamente as credenciais. Remova a pasta de auth manualmente.');
+        }
+        reconnectAttempts = 0;
+        awaitingFreshLogin = true;
+        shouldReconnect = reconnectAllowed;
+        if (shouldReconnect) {
+          console.warn('📸 Aguardando novo QR Code após limpar credenciais...');
+          scheduleFreshLoginAfterLogout(statusCode, 250);
+          shouldReconnect = false;
+          scheduledFreshLogin = true;
+        }
+      }
+      if (!scheduledFreshLogin) {
+        console.log(`❌ Conexão caiu (código: ${statusCode}). Reconectando: ${shouldReconnect}`);
+      } else {
+        console.log(`❌ Conexão caiu (código: ${statusCode}). Nova sessão limpa agendada para QR.`);
+      }
+      if (shouldReconnect) scheduleReconnect(reconnectOptions);
     }
   });
 
