@@ -52,7 +52,8 @@ function loadApiEmitDar(responses) {
     if (moduleName === '@whiskeysockets/baileys') return {
       makeWASocket: () => ({}),
       useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
-      DisconnectReason: {}
+      DisconnectReason: {},
+      fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0] })
     };
     if (moduleName === 'openai') return class {};
     if (moduleName === 'node-cron') return { schedule(){} };
